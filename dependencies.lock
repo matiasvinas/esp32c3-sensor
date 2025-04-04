@@ -1,0 +1,38 @@
+dependencies:
+  espressif/ds18b20:
+    component_hash: 87a753636db56dbb42633b8fdd615c63c5e752ec9c9629e6386d8115f36efc30
+    dependencies:
+    - name: espressif/onewire_bus
+      registry_url: https://components.espressif.com
+      require: private
+      version: ^1.0.0
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 0.1.2
+  espressif/onewire_bus:
+    component_hash: c4c781940d8bd988432b47ac3ee68479c69e14e01fdfba0b61365b233a3ba5d6
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com
+      type: service
+    version: 1.0.2
+  example_init:
+    dependencies: []
+    source:
+      path: C:\Espressif\frameworks\esp-idf-v5.2.2\examples\bluetooth\esp_ble_mesh\common_components\example_init
+      type: local
+    version: '*'
+  idf:
+    source:
+      type: idf
+    version: 5.2.2
+direct_dependencies:
+- espressif/ds18b20
+- example_init
+manifest_hash: 3b62a75ecf9069ab3e4eb56fd74eeccf1d3a62d5b57950feb163c635984220da
+target: esp32c3
+version: 2.0.0
