@@ -35,6 +35,7 @@
 *.i*86
 *.x86_64
 *.hex
+*.pyc
 
 # Debug files
 *.dSYM/
@@ -50,3 +51,27 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+
+# emacs
+.dir-locals.el
+
+# emacs temp file suffixes
+*~
+.#*
+\#*#
+
+# eclipse setting
+.settings
+
+# MacOS directory files
+.DS_Store
+
+# Application project files
+**/sdkconfig
+**/sdkconfig.old
+**/build
+
+# Doc build artifacts
+docs/*/*/_build/
+docs/*/*/sphinx-warning-log.txt
+docs/*/*/sphinx-warning-log-sanitized.txt
