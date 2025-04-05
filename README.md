@@ -5,7 +5,7 @@ Proyecto realizado dentro del marco del Trabajo Profesional de Ingeniería Eletr
 Este repositorio contiene el firmware del dispositivo de los sensores del sistema.
 
 ## Características Técnicas
-- Microcontrolador: ESP32C3 de la empresa [Espressif](https://www.espressif.com/)
+- Microcontrolador: ESP32-C3-WROOM-02 de la empresa [Espressif](https://www.espressif.com/)
 - Framework: ESP-IDF
 - Sensor de Temperatura: DS18B20
 - Sensor de Humedad: YL69
