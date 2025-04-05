@@ -14,5 +14,5 @@ Este repositorio contiene el firmware del dispositivo de los sensores del sistem
 - Para el sensado de las variables climatológicas se utilizó RTOS
 
 ## Esquemático
-![Diagrama del dispositivo Sensor](img/sensor_diagram.png)
+![Diagrama del dispositivo Sensor](images/sensor_diagram.png)
 
