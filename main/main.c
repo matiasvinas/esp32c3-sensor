@@ -1,10 +1,7 @@
-/* main.c - Application main entry point */
-
-/*
- * SPDX-FileCopyrightText: 2017 Intel Corporation
- * SPDX-FileContributor: 2018-2021 Espressif Systems (Shanghai) CO LTD
- *
- * SPDX-License-Identifier: Apache-2.0
+/* 
+ * Theme: Sensor Firmware - ESP32-C3-WROOM-2
+ * Author: Matias Ezequiel Vinas
+ * Date: February 2025 
  */
 
 #include <stdio.h>
@@ -24,11 +21,8 @@
 #include "ble_mesh_example_init.h"
 #include "board.h"
 
-//MYCODE Include sensor libraries
 #include "yl69.h"
-#include "ds18b20.h"
-#include "onewire_bus.h"
-//MYCODE Include sensor libraries
+#include "ds18b20_custom.h"
 
 #define TAG "EXAMPLE"
 
@@ -38,6 +32,9 @@
 #define SENSOR_PROPERTY_ID_0        0x0056  /* Present Indoor Ambient Temperature */
 #define SENSOR_PROPERTY_ID_1        0x005B  /* Present Outdoor Ambient Temperature */
 
+#define DS18B20_ADC_CHANNEL			ADC1_CHANNEL_4
+#define TIME_DELAY					2000
+
 /* The characteristic of the two device properties is "Temperature 8", which is
  * used to represent a measure of temperature with a unit of 0.5 degree Celsius.
  * Minimum value: -64.0, maximum value: 63.5.
@@ -45,6 +42,8 @@
  */
 static int8_t indoor_temp = 40;     /* Indoor temperature is 20 Degrees Celsius */
 static int8_t outdoor_temp = 60;    /* Outdoor temperature is 30 Degrees Celsius */
+
+static float s_temperature = 0.0;
 
 #define SENSOR_POSITIVE_TOLERANCE   ESP_BLE_MESH_SENSOR_UNSPECIFIED_POS_TOLERANCE
 #define SENSOR_NEGATIVE_TOLERANCE   ESP_BLE_MESH_SENSOR_UNSPECIFIED_NEG_TOLERANCE
@@ -630,133 +629,49 @@ static esp_err_t ble_mesh_init(void)
     return ESP_OK;
 }
 
-//////TEMPERATURE SENSOR - START
-
-#define EXAMPLE_ONEWIRE_BUS_GPIO    18
-#define EXAMPLE_ONEWIRE_MAX_DS18B20 2
-
-static int s_ds18b20_device_num = 0;
-static float s_temperature = 0.0;
-static ds18b20_device_handle_t s_ds18b20s[EXAMPLE_ONEWIRE_MAX_DS18B20];
-
-static void sensor_detect(void)
+void sensor_temp_readTask(void *pvParameters)
 {
-    // install 1-wire bus
-    onewire_bus_handle_t bus = NULL;
-    onewire_bus_config_t bus_config = {
-        .bus_gpio_num = EXAMPLE_ONEWIRE_BUS_GPIO,
-    };
-    onewire_bus_rmt_config_t rmt_config = {
-        .max_rx_bytes = 10, // 1byte ROM command + 8byte ROM number + 1byte device command
-    };
-    ESP_ERROR_CHECK(onewire_new_bus_rmt(&bus_config, &rmt_config, &bus));
-
-    onewire_device_iter_handle_t iter = NULL;
-    onewire_device_t next_onewire_device;
-    esp_err_t search_result = ESP_OK;
-
-    // create 1-wire device iterator, which is used for device search
-    ESP_ERROR_CHECK(onewire_new_device_iter(bus, &iter));
-    ESP_LOGI("DS18B20", "Device iterator created, start searching...");
-    do {
-        search_result = onewire_device_iter_get_next(iter, &next_onewire_device);
-        if (search_result == ESP_OK) { // found a new device, let's check if we can upgrade it to a DS18B20
-            ds18b20_config_t ds_cfg = {};
-            // check if the device is a DS18B20, if so, return the ds18b20 handle
-            if (ds18b20_new_device(&next_onewire_device, &ds_cfg, &s_ds18b20s[s_ds18b20_device_num]) == ESP_OK) {
-                ESP_LOGI("DS18B20", "Found a DS18B20[%d], address: %016llX", s_ds18b20_device_num, next_onewire_device.address);
-                s_ds18b20_device_num++;
-            } else {
-                ESP_LOGI("DS18B20", "Found an unknown device, address: %016llX", next_onewire_device.address);
-            }
-        }
-    } while (search_result != ESP_ERR_NOT_FOUND);
-    ESP_ERROR_CHECK(onewire_del_device_iter(iter));
-    ESP_LOGI("DS18B20", "Searching done, %d DS18B20 device(s) found", s_ds18b20_device_num);
-}
-
-float sensor_read(void)
-{
-	float s_temperature = 0.0;
-		
-    for (int i = 0; i < s_ds18b20_device_num; i ++) {
-        ESP_ERROR_CHECK(ds18b20_trigger_temperature_conversion(s_ds18b20s[i]));
-        ESP_ERROR_CHECK(ds18b20_get_temperature(s_ds18b20s[i], &s_temperature));
-        ESP_LOGI("DS18B20", "temperature read from DS18B20[%d]: %.2fC", i, s_temperature);
-    }
-    return s_temperature;
-
-}
-
-void float_to_uint(float var1, uint8_t * var)
-{
-	var[0] = (uint8_t)var1;
-	var[1] = (uint8_t)((var1 - var[0]) * 100);
-}
-
-void sensor_t_readTask(void *pvParameters)
-{
-	uint8_t variable = 15;
     while (1) {
-        /*
-        s_temperature = sensor_read();
-        uint8_t varchar[2]; 
-        float_to_uint(s_temperature,  varchar);
-        */
         
-        if (variable > 30 )
-		{
-			variable = 15;
-		}
+        /* read data from sensor */
+        s_temperature = ds18b20_read();
         
-        ESP_LOGI("temp_readTask", "temp value: %d", variable);
+        uint8_t s_temp_array[2]; 
         
-		net_buf_simple_reset(&sensor_data_0); // sensor_data_0 is NET_BUF_SIMPLE_DEFINE_STATIC(sensor_data_0, 1);
-        net_buf_simple_add_u8(&sensor_data_0, variable);
+        /* Split integer from decimals */
+        float_to_uint(s_temperature,  s_temp_array);     
+        ESP_LOGI("temp_readTask", "temp value: %d", s_temp_array[0]);
         
-        vTaskDelay(2000 / portTICK_PERIOD_MS);
+        /* Save data in memory for BLE Mesh */
+		net_buf_simple_reset(&sensor_data_0);
+        net_buf_simple_add_u8(&sensor_data_0, s_temp_array[0]);
         
-        variable++;
+        /* Delay */
+        vTaskDelay(TIME_DELAY / portTICK_PERIOD_MS);
     }
 }
 
-//////TEMPERATURE SENSOR - END
-
-//////HUMIDITY SENSOR - START
-
-void sensor_h_readTask(void *pvParameters)
+void sensor_hum_readTask(void *pvParameters)
 {
-	uint8_t adc_perc_casted = 1;
 	
 	while (1) {
-		/*
-		char yl69_buffer[1024];
+				
+		/* read data from sensor */
 		uint32_t adc_reading = yl69_read();
+		
+		/* convert data to percentage*/
 		uint32_t adc_percentage = yl69_normalization(adc_reading);
 		uint8_t adc_perc_casted = (uint8_t) adc_percentage;
-		printf("%" PRIu32 "\n", adc_percentage);
-		printf("%" PRIu32 "\n", adc_reading);
-		*/
-		
-		
-		if (adc_perc_casted > 10 )
-		{
-			adc_perc_casted = 1;
-		}
-		
 		ESP_LOGI("hum_readTask", "hum value: %d", adc_perc_casted);
-		
-		net_buf_simple_reset(&sensor_data_1); // sensor_data_0 is NET_BUF_SIMPLE_DEFINE_STATIC(sensor_data_0, 1);
+				
+		/* Save data in memory for BLE Mesh */
+		net_buf_simple_reset(&sensor_data_1);
         net_buf_simple_add_u8(&sensor_data_1, adc_perc_casted);
         
-		vTaskDelay(2000 / portTICK_PERIOD_MS);
-		
-		adc_perc_casted++;
+        /* Delay */
+		vTaskDelay(TIME_DELAY / portTICK_PERIOD_MS);
 	}
 }
-
-////// HUMIDITY SENSOR - END
-
 
 void app_main(void)
 {
@@ -781,22 +696,22 @@ void app_main(void)
 
     ble_mesh_get_dev_uuid(dev_uuid);
 
-    /* Initialize the Bluetooth Mesh Subsystem */
+    /* Initialize Bluetooth Mesh Subsystem */
     err = ble_mesh_init();
     if (err) {
         ESP_LOGE(TAG, "Bluetooth mesh init failed (err %d)", err);
     }
     
-    //Initialize Temperature Sensor
-    sensor_detect();
+    /* Initialize ds18b20 temperature sensor */
+    ds18b20_init();
     
-    //Initialize Humidity Sensor
-	yl69_setup(ADC_CHANNEL_0);
+    /* Initialize yl69 humidity sensor */
+	yl69_init(DS18B20_ADC_CHANNEL);
 		
-	// Start task to read the humidity from YL-69 sensor
-	xTaskCreate(sensor_h_readTask, "sensor_h_readTask", 4*1024, NULL, 1, NULL);
+	/* Create humidity task */
+	xTaskCreate(sensor_hum_readTask, "sensor_h_readTask", 4*1024, NULL, 1, NULL);
 	
-	// Start task to read the temperature from DS18B20 sensor
-    xTaskCreate(&sensor_t_readTask, "sensor_t_readTask", 4096, NULL, 5, NULL);
-
+	/* Create temperature task */
+    xTaskCreate(&sensor_temp_readTask, "sensor_t_readTask", 4096, NULL, 5, NULL);
+    
 }

@@ -1,11 +1,8 @@
 /*
  * ESP32 Soil Moisture Sensor YL-69 or HL-69 Driver
- * Copyright 2021, Lorenzo Carnevale <lcarnevale@unime.it>
  */
 
 #include "yl69.h"
-
-
 
 
 static adc1_channel_t channel;
@@ -15,7 +12,7 @@ static const adc_unit_t unit = ADC_UNIT_1;
 static const adc_atten_t attenuation = ADC_ATTEN_DB_12;
 
 
-void yl69_setup(adc1_channel_t _channel) {
+void yl69_init(adc1_channel_t _channel) {
     channel = _channel;
     //Configure ADC
     adc1_config_width(ADC_WIDTH_BIT_12);
