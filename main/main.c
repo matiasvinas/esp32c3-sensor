@@ -11,6 +11,9 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 
+/* power management */
+#include "esp_pm.h"
+
 #include "esp_ble_mesh_defs.h"
 #include "esp_ble_mesh_common_api.h"
 #include "esp_ble_mesh_networking_api.h"
@@ -33,6 +36,11 @@
 
 #define DS18B20_ADC_CHANNEL			ADC1_CHANNEL_4
 #define TIME_DELAY					2000
+
+/* CPU FREQ RANGES*/
+#define MAX_CPU_FREQ_MHZ			160
+#define MIN_CPU_FREQ_MHZ			40
+
 
 /* The characteristic of the two device properties is "Temperature 8", which is
  * used to represent a measure of temperature with a unit of 0.5 degree Celsius.
@@ -682,6 +690,16 @@ void app_main(void)
         err = nvs_flash_init();
     }
     ESP_ERROR_CHECK(err);
+
+    // Configure dynamic frequency scaling:
+    // maximum and minimum frequencies are set in sdkconfig,
+    // automatic light sleep is enabled if tickless idle support is enabled.
+    esp_pm_config_t pm_config = {
+            .max_freq_mhz = MAX_CPU_FREQ_MHZ,
+            .min_freq_mhz = MIN_CPU_FREQ_MHZ,
+            .light_sleep_enable = true
+    };
+    ESP_ERROR_CHECK( esp_pm_configure(&pm_config) );
 
     err = bluetooth_init();
     if (err) {
