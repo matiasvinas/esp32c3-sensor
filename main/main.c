@@ -47,7 +47,7 @@
  * Minimum value: -64.0, maximum value: 63.5.
  * A value of 0xFF represents 'value is not known'.
  */
-static int8_t indoor_temp = 40;     /* Indoor temperature is 20 Degrees Celsius */
+static float indoor_temp = 456.678;     /* Indoor temperature is 20 Degrees Celsius */
 static int8_t outdoor_temp = 60;    /* Outdoor temperature is 30 Degrees Celsius */
 
 static float s_temperature = 0.0;
@@ -79,8 +79,8 @@ static esp_ble_mesh_cfg_srv_t config_server = {
     .default_ttl = 7,
 };
 
-NET_BUF_SIMPLE_DEFINE_STATIC(data_temperature, 1);
-NET_BUF_SIMPLE_DEFINE_STATIC(data_humidity, 1);
+NET_BUF_SIMPLE_DEFINE_STATIC(data_temperature, 8);
+NET_BUF_SIMPLE_DEFINE_STATIC(data_soil_moisture, 8);
 
 static esp_ble_mesh_sensor_state_t sensor_states[2] = {
     /* Mesh Model Spec:
@@ -110,7 +110,7 @@ static esp_ble_mesh_sensor_state_t sensor_states[2] = {
         },
         .sensor_data = {
             .format = ESP_BLE_MESH_SENSOR_DATA_FORMAT_A,
-            .length = 0, /* 0 represents the length is 1 */
+            .length = 2, /* 0 represents the length is 1 */
             .raw_value = &data_temperature,
         },
     },
@@ -125,8 +125,8 @@ static esp_ble_mesh_sensor_state_t sensor_states[2] = {
         },
         .sensor_data = {
             .format = ESP_BLE_MESH_SENSOR_DATA_FORMAT_A,
-            .length = 0, /* 0 represents the length is 1 */
-            .raw_value = &data_humidity,
+            .length = 1, /* 0 represents the length is 1 */
+            .raw_value = &data_soil_moisture,
         },
     },
 };
@@ -178,8 +178,9 @@ static void prov_complete(uint16_t net_idx, uint16_t addr, uint8_t flags, uint32
     ESP_LOGI(TAG, "flags 0x%02x, iv_index 0x%08" PRIx32, flags, iv_index);
 
     /* Initialize the temperature and humidity variables  */
-    net_buf_simple_add_u8(&data_temperature, indoor_temp);
-    net_buf_simple_add_u8(&data_humidity, outdoor_temp);
+    //net_buf_simple_add_u8(&data_temperature, indoor_temp);
+    net_buf_simple_add_le24(&data_temperature, indoor_temp);
+    net_buf_simple_add_le16(&data_soil_moisture, outdoor_temp);
 }
 
 static void ble_mesh_provisioning_cb(esp_ble_mesh_prov_cb_event_t event,
@@ -638,19 +639,30 @@ void sensor_temp_readTask(void *pvParameters)
 {
     while (1) {
         
-        /* read data from sensor */
-        s_temperature = ds18b20_read();
+        uint8_t is_temp_below_zero = false;
         
-        uint8_t s_temp_array[2]; 
+        /* read data from sensor*/
+        s_temperature = ds18b20_read() * 100;
         
-        /* Split integer from decimals */
-        float_to_uint(s_temperature,  s_temp_array);     
-        ESP_LOGI("temp_readTask", "temp value: %d", s_temp_array[0]);
+        /*check if is negative value*/
+        if(s_temperature < 0)
+        {
+			s_temperature = s_temperature * (-1);
+			is_temp_below_zero = true;
+		}
+		
+        ESP_LOGI("temp_readTask", "temp value for buffer: %f", s_temperature);
         
         /* Save data in memory for BLE Mesh */
 		net_buf_simple_reset(&data_temperature);
-        net_buf_simple_add_u8(&data_temperature, s_temp_array[0]);
+        net_buf_simple_add_le16(&data_temperature, s_temperature);
+        net_buf_simple_add_u8(&data_temperature, is_temp_below_zero);
         
+        //net_buf_simple_add_u8(&data_temperature, s_temp_array[0]);
+        ESP_LOGI("temp_readTask", "data temp saved value index 0: %x", data_temperature.data[0]);
+        ESP_LOGI("temp_readTask", "data temp saved value index 1: %x", data_temperature.data[1]);
+        ESP_LOGI("temp_readTask", "data temp saved value index 2: %x", data_temperature.data[2]);
+        ESP_LOGI("temp_readTask", "data temp saved value index 3: %x", data_temperature.data[3]);
         /* Delay */
         vTaskDelay(TIME_DELAY / portTICK_PERIOD_MS);
     }
@@ -662,17 +674,26 @@ void sensor_hum_readTask(void *pvParameters)
 	while (1) {
 				
 		/* read data from sensor */
-		uint32_t adc_reading = yl69_read();
+		uint32_t adc_moisture_reading = yl69_read();
 		
+		float s_moisture = (float) ( 4095 - adc_moisture_reading ) * 0.0244; // 100/4095 = 0.0244
+		ESP_LOGI("hum_readTask", "moisture value: %f", s_moisture);
+		
+		/*preparing data to send*/
+		s_moisture = s_moisture * 100;
+		
+		ESP_LOGI("hum_readTask", "hum value adc_reading: %08" PRIx32, adc_moisture_reading);
 		/* convert data to percentage*/
-		uint32_t adc_percentage = yl69_normalization(adc_reading);
+		uint32_t adc_percentage = yl69_normalization(adc_moisture_reading);
+		ESP_LOGI("hum_readTask", "hum value adc_reading: %08" PRIx32, adc_percentage);
 		uint8_t adc_perc_casted = (uint8_t) adc_percentage;
 		ESP_LOGI("hum_readTask", "hum value: %d", adc_perc_casted);
 				
 		/* Save data in memory for BLE Mesh */
-		net_buf_simple_reset(&data_humidity);
-        net_buf_simple_add_u8(&data_humidity, adc_perc_casted);
-        
+		net_buf_simple_reset(&data_soil_moisture);
+        net_buf_simple_add_le16(&data_soil_moisture, s_moisture);
+        ESP_LOGI("temp_readTask", "data moisture saved value index 0: %x", data_soil_moisture.data[0]);
+        ESP_LOGI("temp_readTask", "data moisture saved value index 1: %x", data_soil_moisture.data[1]);        
         /* Delay */
 		vTaskDelay(TIME_DELAY / portTICK_PERIOD_MS);
 	}
