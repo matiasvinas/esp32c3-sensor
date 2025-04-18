@@ -52,6 +52,9 @@ static int8_t outdoor_temp = 60;    /* Outdoor temperature is 30 Degrees Celsius
 
 static float s_temperature = 0.0;
 
+void sensor_hum_readTask(void);
+void sensor_temp_readTask(void);
+
 #define SENSOR_POSITIVE_TOLERANCE   ESP_BLE_MESH_SENSOR_UNSPECIFIED_POS_TOLERANCE
 #define SENSOR_NEGATIVE_TOLERANCE   ESP_BLE_MESH_SENSOR_UNSPECIFIED_NEG_TOLERANCE
 #define SENSOR_SAMPLE_FUNCTION      ESP_BLE_MESH_SAMPLE_FUNC_UNSPECIFIED
@@ -568,6 +571,8 @@ static void ble_mesh_sensor_server_cb(esp_ble_mesh_sensor_server_cb_event_t even
             break;
         case ESP_BLE_MESH_MODEL_OP_SENSOR_GET:
             ESP_LOGI(TAG, "ESP_BLE_MESH_MODEL_OP_SENSOR_GET");
+            sensor_temp_readTask();
+            sensor_hum_readTask();
             ble_mesh_send_sensor_status(param);
             break;
         case ESP_BLE_MESH_MODEL_OP_SENSOR_COLUMN_GET:
@@ -635,9 +640,10 @@ static esp_err_t ble_mesh_init(void)
     return ESP_OK;
 }
 
-void sensor_temp_readTask(void *pvParameters)
+//void sensor_temp_readTask(void *pvParameters)
+void sensor_temp_readTask(void)
 {
-    while (1) {
+    //while (1) {
         
         uint8_t is_temp_below_zero = false;
         
@@ -665,13 +671,14 @@ void sensor_temp_readTask(void *pvParameters)
         ESP_LOGI("temp_readTask", "data temp saved value index 3: %x", data_temperature.data[3]);
         /* Delay */
         vTaskDelay(TIME_DELAY / portTICK_PERIOD_MS);
-    }
+    //}
 }
 
-void sensor_hum_readTask(void *pvParameters)
+//void sensor_hum_readTask(void *pvParameters)
+void sensor_hum_readTask(void)
 {
 	
-	while (1) {
+	//while (1) {
 				
 		/* read data from sensor */
 		uint32_t adc_moisture_reading = yl69_read();
@@ -696,7 +703,7 @@ void sensor_hum_readTask(void *pvParameters)
         ESP_LOGI("temp_readTask", "data moisture saved value index 1: %x", data_soil_moisture.data[1]);        
         /* Delay */
 		vTaskDelay(TIME_DELAY / portTICK_PERIOD_MS);
-	}
+	//}
 }
 
 void app_main(void)
@@ -743,9 +750,9 @@ void app_main(void)
 	yl69_init(DS18B20_ADC_CHANNEL);
 		
 	/* Create humidity task */
-	xTaskCreate(sensor_hum_readTask, "sensor_h_readTask", 4*1024, NULL, 1, NULL);
+	//xTaskCreate(sensor_hum_readTask, "sensor_h_readTask", 4*1024, NULL, 1, NULL);
 	
 	/* Create temperature task */
-    xTaskCreate(&sensor_temp_readTask, "sensor_t_readTask", 4096, NULL, 5, NULL);
+    //xTaskCreate(&sensor_temp_readTask, "sensor_t_readTask", 4096, NULL, 5, NULL);
     
 }
