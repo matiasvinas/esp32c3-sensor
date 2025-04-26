@@ -23,9 +23,8 @@
 
 #include "ble_mesh_example_init.h"
 
-#include "yl69.h"
 #include "ds18b20_custom.h"
-
+#include "adc_sensors.h"
 #define TAG "EXAMPLE"
 
 #define CID_ESP     0x02E5
@@ -34,7 +33,9 @@
 #define SENSOR_PROPERTY_ID_0        0x0056  /* Present Indoor Ambient Temperature */
 #define SENSOR_PROPERTY_ID_1        0x005B  /* Present Outdoor Ambient Temperature */
 
-#define DS18B20_ADC_CHANNEL			ADC1_CHANNEL_4
+#define ADC_YL69_CHANNEL			ADC1_CHANNEL_4
+#define ADC_BATTERY_CHANNEL			ADC1_CHANNEL_3
+
 #define TIME_DELAY					2000
 
 /* CPU FREQ RANGES*/
@@ -681,20 +682,20 @@ void sensor_hum_readTask(void)
 	//while (1) {
 				
 		/* read data from sensor */
-		uint32_t adc_moisture_reading = yl69_read();
+		float adc_moisture_reading = adc_yl69_read();
 		
-		float s_moisture = (float) ( 4095 - adc_moisture_reading ) * 0.0244; // 100/4095 = 0.0244
-		ESP_LOGI("hum_readTask", "moisture value: %f", s_moisture);
+		//float s_moisture = (float) ( 4095 - adc_moisture_reading ) * 0.0244; // 100/4095 = 0.0244
+		ESP_LOGI("hum_readTask", "moisture value: %f", adc_moisture_reading);
 		
 		/*preparing data to send*/
-		s_moisture = s_moisture * 100;
+		float s_moisture = adc_moisture_reading * 100;
 		
-		ESP_LOGI("hum_readTask", "hum value adc_reading: %08" PRIx32, adc_moisture_reading);
+		//ESP_LOGI("hum_readTask", "hum value adc_reading: %08" PRIx32, adc_moisture_reading);
 		/* convert data to percentage*/
-		uint32_t adc_percentage = yl69_normalization(adc_moisture_reading);
-		ESP_LOGI("hum_readTask", "hum value adc_reading: %08" PRIx32, adc_percentage);
-		uint8_t adc_perc_casted = (uint8_t) adc_percentage;
-		ESP_LOGI("hum_readTask", "hum value: %d", adc_perc_casted);
+		//uint32_t adc_percentage = adc_yl69_normalization(adc_moisture_reading);
+		//ESP_LOGI("hum_readTask", "hum value adc_reading: %08" PRIx32, adc_percentage);
+		//uint8_t adc_perc_casted = (uint8_t) adc_percentage;
+		//ESP_LOGI("hum_readTask", "hum value: %d", adc_perc_casted);
 				
 		/* Save data in memory for BLE Mesh */
 		net_buf_simple_reset(&data_soil_moisture);
@@ -747,12 +748,17 @@ void app_main(void)
     ds18b20_init();
     
     /* Initialize yl69 humidity sensor */
-	yl69_init(DS18B20_ADC_CHANNEL);
+	//yl69_init(ADC_YL69_CHANNEL);
 		
-	/* Create humidity task */
-	//xTaskCreate(sensor_hum_readTask, "sensor_h_readTask", 4*1024, NULL, 1, NULL);
+	/*initialize adc battery level driver*/
+	adc_sensors_init();
 	
-	/* Create temperature task */
-    //xTaskCreate(&sensor_temp_readTask, "sensor_t_readTask", 4096, NULL, 5, NULL);
-    
+	
+	while(1)
+	{
+	adc_battery_read();
+	vTaskDelay(pdMS_TO_TICKS(1000));	
+	adc_yl69_read();
+	vTaskDelay(pdMS_TO_TICKS(1000));	
+	}
 }
