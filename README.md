@@ -60,9 +60,16 @@ El estado del sensor está compuesto por:
 
 1. El dispositivo sensor recibe un GET_STATE_MESSAGE del dispositivo [ESP32C3-gateway](https://github.com/matiasvinas/esp32c3-gateway).
 2. El dispositivo sensa y almacena el valor de temperatura.
-3. El dispositivo sensa y almacena el valor de humedad.
-4. El dispositivo sensa y almacena el valor de tensión de batería.
-5. El dispositivo envía los valores almacenados al dispositivo [ESP32C3-gateway](https://github.com/matiasvinas/esp32c3-gateway).
+3. El dispositivo inicializa los drivers ADC utilizados por el sensor de humedad y tensión de batería.
+4. El dispositivo sensa y almacena el valor de humedad.
+5. El dispositivo sensa y almacena el valor de tensión de batería.
+6. El dispositivo desinicializa los drivers ADC utilizados por el sensor de humedad y tensión de batería.
+7. El dispositivo envía los valores almacenados al dispositivo [ESP32C3-gateway](https://github.com/matiasvinas/esp32c3-gateway).
+
+## Consumo eficiente de energía
+
+- Se implementó Light Sleep Mode dado que presenta la mejor opción para reducir el consumo de energía sin comprometer la conexión Bluetooth.
+- Los drivers ADC utilizados por el sensor de humedad y tensión de batería son inicializados antes de obtener el valor y desinicializados luego de almacenar dicho valor.
 
 ## Notas
 - Se modificó el archivo ble_mesh_example_init.c para poder definir de manera explícita los 8 bits que identifican al dispositivo sensor del resto, en específico la función: ble_mesh_get_dev_uuid().
@@ -75,3 +82,15 @@ El estado del sensor está compuesto por:
 ## Enlaces útiles
 
 [ESP-BLE-MESH - Sensor Server Client Example](https://github.com/espressif/esp-idf/blob/master/examples/bluetooth/esp_ble_mesh/sensor_models/sensor_client/README.md)
+
+[ESP32 Docs - Sleep Modes ](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/sleep_modes.html)
+
+[ESP32 Example - Bluetooth Power Save](https://github.com/espressif/esp-idf/blob/v5.4.1/examples/bluetooth/nimble/power_save/README.md)
+
+
+
+
+## Cosas pendientes por hacer
+
+- Emprolijar el código, eliminar variables innecesarias, remover comentarios y valores harcodeados
+- Verificar consumo de corriente del dispositivo

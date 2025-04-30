@@ -595,9 +595,12 @@ static void ble_mesh_sensor_server_cb(esp_ble_mesh_sensor_server_cb_event_t even
         case ESP_BLE_MESH_MODEL_OP_SENSOR_GET:
             ESP_LOGI(TAG, "ESP_BLE_MESH_MODEL_OP_SENSOR_GET");
             sensor_temp_readTask();
+            adc_sensors_init();
             sensor_hum_readTask();
             sensor_battery_readTask();
+            adc_sensors_deinit();
             ble_mesh_send_sensor_status(param);
+            
             ESP_LOGI(TAG, "ESP_BLE_MESH_MODEL_OP_SENSOR_GET - EXITING");
             break;
         case ESP_BLE_MESH_MODEL_OP_SENSOR_COLUMN_GET:
@@ -778,14 +781,12 @@ void app_main(void)
 	//yl69_init(ADC_YL69_CHANNEL);
 		
 	/*initialize adc battery level driver*/
-	adc_sensors_init();
+	//adc_sensors_init();
 	
 	
 	while(1)
 	{
-	    //sensor_temp_readTask();
-	    //sensor_hum_readTask();
-	    //sensor_battery_readTask();
+		ESP_LOGI("MAIN_LOOP", "eternal loop");
 		vTaskDelay(pdMS_TO_TICKS(5000));	
 	}
 }
