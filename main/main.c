@@ -30,8 +30,10 @@
 #define CID_ESP     0x02E5
 
 /* Sensor Property ID */
-#define SENSOR_PROPERTY_ID_0        0x0056  /* Present Indoor Ambient Temperature */
-#define SENSOR_PROPERTY_ID_1        0x005B  /* Present Outdoor Ambient Temperature */
+#define SENSOR_PROPERTY_ID_0        0x0056  /* Temperature */
+#define SENSOR_PROPERTY_ID_1        0x005B  /* Soil Moisture */
+#define SENSOR_PROPERTY_ID_2        0x005C  /* Battery */
+
 
 #define ADC_YL69_CHANNEL			ADC1_CHANNEL_4
 #define ADC_BATTERY_CHANNEL			ADC1_CHANNEL_3
@@ -55,6 +57,7 @@ static float s_temperature = 0.0;
 
 void sensor_hum_readTask(void);
 void sensor_temp_readTask(void);
+void sensor_battery_readTask(void);
 
 #define SENSOR_POSITIVE_TOLERANCE   ESP_BLE_MESH_SENSOR_UNSPECIFIED_POS_TOLERANCE
 #define SENSOR_NEGATIVE_TOLERANCE   ESP_BLE_MESH_SENSOR_UNSPECIFIED_NEG_TOLERANCE
@@ -62,7 +65,7 @@ void sensor_temp_readTask(void);
 #define SENSOR_MEASURE_PERIOD       ESP_BLE_MESH_SENSOR_NOT_APPL_MEASURE_PERIOD
 #define SENSOR_UPDATE_INTERVAL      ESP_BLE_MESH_SENSOR_NOT_APPL_UPDATE_INTERVAL
 
-static uint8_t dev_uuid[ESP_BLE_MESH_OCTET16_LEN] = { 0x32, 0x10 };
+static uint8_t dev_uuid[ESP_BLE_MESH_OCTET16_LEN] = { 0x32, 0x10, 0x01 };
 
 static esp_ble_mesh_cfg_srv_t config_server = {
     /* 3 transmissions with 20ms interval */
@@ -83,10 +86,11 @@ static esp_ble_mesh_cfg_srv_t config_server = {
     .default_ttl = 7,
 };
 
-NET_BUF_SIMPLE_DEFINE_STATIC(data_temperature, 8);
-NET_BUF_SIMPLE_DEFINE_STATIC(data_soil_moisture, 8);
+NET_BUF_SIMPLE_DEFINE_STATIC(data_temperature, 24);
+NET_BUF_SIMPLE_DEFINE_STATIC(data_soil_moisture, 16);
+NET_BUF_SIMPLE_DEFINE_STATIC(data_battery_level, 16);
 
-static esp_ble_mesh_sensor_state_t sensor_states[2] = {
+static esp_ble_mesh_sensor_state_t sensor_states[3] = {
     /* Mesh Model Spec:
      * Multiple instances of the Sensor states may be present within the same model,
      * provided that each instance has a unique value of the Sensor Property ID to
@@ -133,10 +137,25 @@ static esp_ble_mesh_sensor_state_t sensor_states[2] = {
             .raw_value = &data_soil_moisture,
         },
     },
+    [2] = {
+        .sensor_property_id = SENSOR_PROPERTY_ID_2,
+        .descriptor = {
+            .positive_tolerance = SENSOR_POSITIVE_TOLERANCE,
+            .negative_tolerance = SENSOR_NEGATIVE_TOLERANCE,
+            .sampling_function = SENSOR_SAMPLE_FUNCTION,
+            .measure_period = SENSOR_MEASURE_PERIOD,
+            .update_interval = SENSOR_UPDATE_INTERVAL,
+        },
+        .sensor_data = {
+            .format = ESP_BLE_MESH_SENSOR_DATA_FORMAT_A,
+            .length = 1, /* 0 represents the length is 1 */
+            .raw_value = &data_battery_level,
+        },
+    }
 };
 
 /* 20 octets is large enough to hold two Sensor Descriptor state values. */
-ESP_BLE_MESH_MODEL_PUB_DEFINE(sensor_pub, 20, ROLE_NODE);
+ESP_BLE_MESH_MODEL_PUB_DEFINE(sensor_pub, 30, ROLE_NODE);
 static esp_ble_mesh_sensor_srv_t sensor_server = {
     .rsp_ctrl = {
         .get_auto_rsp = ESP_BLE_MESH_SERVER_RSP_BY_APP,
@@ -146,7 +165,7 @@ static esp_ble_mesh_sensor_srv_t sensor_server = {
     .states = sensor_states,
 };
 
-ESP_BLE_MESH_MODEL_PUB_DEFINE(sensor_setup_pub, 20, ROLE_NODE);
+ESP_BLE_MESH_MODEL_PUB_DEFINE(sensor_setup_pub, 30, ROLE_NODE);
 static esp_ble_mesh_sensor_setup_srv_t sensor_setup_server = {
     .rsp_ctrl = {
         .get_auto_rsp = ESP_BLE_MESH_SERVER_RSP_BY_APP,
@@ -185,6 +204,7 @@ static void prov_complete(uint16_t net_idx, uint16_t addr, uint8_t flags, uint32
     //net_buf_simple_add_u8(&data_temperature, indoor_temp);
     net_buf_simple_add_le24(&data_temperature, indoor_temp);
     net_buf_simple_add_le16(&data_soil_moisture, outdoor_temp);
+    net_buf_simple_add_le16(&data_battery_level, outdoor_temp);
 }
 
 static void ble_mesh_provisioning_cb(esp_ble_mesh_prov_cb_event_t event,
@@ -504,6 +524,8 @@ send:
         ESP_LOGE(TAG, "Failed to send Sensor Status");
     }
     free(status);
+    ESP_LOGI(TAG, "SENT MESSAGE STATUS - EXITING");
+    
 }
 
 static void ble_mesh_send_sensor_column_status(esp_ble_mesh_sensor_server_cb_param_t *param)
@@ -574,7 +596,9 @@ static void ble_mesh_sensor_server_cb(esp_ble_mesh_sensor_server_cb_event_t even
             ESP_LOGI(TAG, "ESP_BLE_MESH_MODEL_OP_SENSOR_GET");
             sensor_temp_readTask();
             sensor_hum_readTask();
+            sensor_battery_readTask();
             ble_mesh_send_sensor_status(param);
+            ESP_LOGI(TAG, "ESP_BLE_MESH_MODEL_OP_SENSOR_GET - EXITING");
             break;
         case ESP_BLE_MESH_MODEL_OP_SENSOR_COLUMN_GET:
             ESP_LOGI(TAG, "ESP_BLE_MESH_MODEL_OP_SENSOR_COLUMN_GET");
@@ -641,11 +665,8 @@ static esp_err_t ble_mesh_init(void)
     return ESP_OK;
 }
 
-//void sensor_temp_readTask(void *pvParameters)
 void sensor_temp_readTask(void)
 {
-    //while (1) {
-        
         uint8_t is_temp_below_zero = false;
         
         /* read data from sensor*/
@@ -672,15 +693,10 @@ void sensor_temp_readTask(void)
         ESP_LOGI("temp_readTask", "data temp saved value index 3: %x", data_temperature.data[3]);
         /* Delay */
         vTaskDelay(TIME_DELAY / portTICK_PERIOD_MS);
-    //}
 }
 
-//void sensor_hum_readTask(void *pvParameters)
 void sensor_hum_readTask(void)
-{
-	
-	//while (1) {
-				
+{				
 		/* read data from sensor */
 		float adc_moisture_reading = adc_yl69_read();
 		
@@ -689,13 +705,6 @@ void sensor_hum_readTask(void)
 		
 		/*preparing data to send*/
 		float s_moisture = adc_moisture_reading * 100;
-		
-		//ESP_LOGI("hum_readTask", "hum value adc_reading: %08" PRIx32, adc_moisture_reading);
-		/* convert data to percentage*/
-		//uint32_t adc_percentage = adc_yl69_normalization(adc_moisture_reading);
-		//ESP_LOGI("hum_readTask", "hum value adc_reading: %08" PRIx32, adc_percentage);
-		//uint8_t adc_perc_casted = (uint8_t) adc_percentage;
-		//ESP_LOGI("hum_readTask", "hum value: %d", adc_perc_casted);
 				
 		/* Save data in memory for BLE Mesh */
 		net_buf_simple_reset(&data_soil_moisture);
@@ -704,7 +713,25 @@ void sensor_hum_readTask(void)
         ESP_LOGI("temp_readTask", "data moisture saved value index 1: %x", data_soil_moisture.data[1]);        
         /* Delay */
 		vTaskDelay(TIME_DELAY / portTICK_PERIOD_MS);
-	//}
+}
+
+void sensor_battery_readTask(void)
+{				
+		/* read data from sensor */
+		uint16_t adc_battery_level = adc_battery_read();
+		
+		ESP_LOGI("battery_readTask", "battery level value: %d", (int) adc_battery_level);
+		
+		/*preparing data to send*/
+		//float s_battery = adc_battery_level * 100;
+				
+		/* Save data in memory for BLE Mesh */
+		net_buf_simple_reset(&data_battery_level);
+        net_buf_simple_add_le16(&data_battery_level, adc_battery_level);
+        ESP_LOGI("temp_readTask", "data battery saved value index 0: %x", data_battery_level.data[0]);
+        ESP_LOGI("temp_readTask", "data battery saved value index 1: %x", data_battery_level.data[1]);        
+        /* Delay */
+		vTaskDelay(TIME_DELAY / portTICK_PERIOD_MS);
 }
 
 void app_main(void)
@@ -756,9 +783,9 @@ void app_main(void)
 	
 	while(1)
 	{
-	adc_battery_read();
-	vTaskDelay(pdMS_TO_TICKS(1000));	
-	adc_yl69_read();
-	vTaskDelay(pdMS_TO_TICKS(1000));	
+	    //sensor_temp_readTask();
+	    //sensor_hum_readTask();
+	    //sensor_battery_readTask();
+		vTaskDelay(pdMS_TO_TICKS(5000));	
 	}
 }
