@@ -776,13 +776,6 @@ void app_main(void)
     
     /* Initialize ds18b20 temperature sensor */
     ds18b20_init();
-    
-    /* Initialize yl69 humidity sensor */
-	//yl69_init(ADC_YL69_CHANNEL);
-		
-	/*initialize adc battery level driver*/
-	//adc_sensors_init();
-	
 	
 	while(1)
 	{
