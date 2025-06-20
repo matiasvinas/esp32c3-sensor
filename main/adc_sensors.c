@@ -5,8 +5,8 @@
 #include "adc_sensors.h"
 
 
-const static char *ADC_BATTERY_TAG = "ADC_BATTERY";
-const static char *ADC_MOISTURE_TAG = "ADC_MOISTURE";
+const static char *TAG_adc_battery = "ADC for Battery sensor";
+const static char *TAG_adc_moisture = "ADC for Moisture sensor";
 
 static adc_oneshot_unit_handle_t adc1_handle;
 
@@ -33,7 +33,7 @@ bool adc_calibration_init(adc_unit_t unit, adc_channel_t channel, adc_atten_t at
 
 #if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
     if (!calibrated) {
-        ESP_LOGI(ADC_BATTERY_TAG, "calibration scheme version is %s", "Curve Fitting");
+        ESP_LOGI(TAG_adc_battery, "calibration scheme version is %s", "Curve Fitting");
         adc_cali_curve_fitting_config_t cali_config = {
             .unit_id = unit,
             .chan = channel,
@@ -49,7 +49,7 @@ bool adc_calibration_init(adc_unit_t unit, adc_channel_t channel, adc_atten_t at
 
 #if ADC_CALI_SCHEME_LINE_FITTING_SUPPORTED
     if (!calibrated) {
-        ESP_LOGI(ADC_BATTERY_TAG, "calibration scheme version is %s", "Line Fitting");
+        ESP_LOGI(TAG_adc_battery, "calibration scheme version is %s", "Line Fitting");
         adc_cali_line_fitting_config_t cali_config = {
             .unit_id = unit,
             .atten = atten,
@@ -64,11 +64,11 @@ bool adc_calibration_init(adc_unit_t unit, adc_channel_t channel, adc_atten_t at
 
     *out_handle = handle;
     if (ret == ESP_OK) {
-        ESP_LOGI(ADC_BATTERY_TAG, "Calibration Success");
+        ESP_LOGI(TAG_adc_battery, "Calibration Success");
     } else if (ret == ESP_ERR_NOT_SUPPORTED || !calibrated) {
-        ESP_LOGW(ADC_BATTERY_TAG, "eFuse not burnt, skip software calibration");
+        ESP_LOGW(TAG_adc_battery, "eFuse not burnt, skip software calibration");
     } else {
-        ESP_LOGE(ADC_BATTERY_TAG, "Invalid arg or no memory");
+        ESP_LOGE(TAG_adc_battery, "Invalid arg or no memory");
     }
 
     return calibrated;
@@ -77,11 +77,11 @@ bool adc_calibration_init(adc_unit_t unit, adc_channel_t channel, adc_atten_t at
 void adc_calibration_deinit(adc_cali_handle_t handle)
 {
 #if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
-    ESP_LOGI(ADC_BATTERY_TAG, "deregister %s calibration scheme", "Curve Fitting");
+    ESP_LOGI(TAG_adc_battery, "deregister %s calibration scheme", "Curve Fitting");
     ESP_ERROR_CHECK(adc_cali_delete_scheme_curve_fitting(handle));
 
 #elif ADC_CALI_SCHEME_LINE_FITTING_SUPPORTED
-    ESP_LOGI(ADC_BATTERY_TAG, "deregister %s calibration scheme", "Line Fitting");
+    ESP_LOGI(TAG_adc_battery, "deregister %s calibration scheme", "Line Fitting");
     ESP_ERROR_CHECK(adc_cali_delete_scheme_line_fitting(handle));
 #endif
 }
@@ -121,9 +121,9 @@ uint32_t adc_battery_read(void)
 	
 	adc_value /= NO_OF_SAMPLES;
 
-	ESP_LOGI(ADC_BATTERY_TAG, "ADC%d Channel[%d] Battery Raw Data: %d", ADC_UNIT_1 + 1, ADC_CHANNEL_BATTERY, adc_value);
+	ESP_LOGI(TAG_adc_battery, "ADC%d Channel[%d] Battery Raw Data: %d", ADC_UNIT_1 + 1, ADC_CHANNEL_BATTERY, adc_value);
 	ESP_ERROR_CHECK(adc_cali_raw_to_voltage(adc1_cali_chan3_handle, adc_value, &voltage));
-    ESP_LOGI(ADC_BATTERY_TAG, "ADC%d Channel[%d] Battery Voltage: %d mV", ADC_UNIT_1 + 1, ADC_CHANNEL_BATTERY, voltage);
+    ESP_LOGI(TAG_adc_battery, "ADC%d Channel[%d] Battery Voltage: %d mV", ADC_UNIT_1 + 1, ADC_CHANNEL_BATTERY, voltage);
     
     return voltage;
 }
@@ -142,11 +142,11 @@ float adc_yl69_read()
 	
 	adc_value /= NO_OF_SAMPLES;	
 	
-	ESP_LOGI(ADC_MOISTURE_TAG, "ADC%d Channel[%d] Moisture Raw Data: %d", ADC_UNIT_1 + 1, ADC_CHANNEL_YL69, adc_value);
+	ESP_LOGI(TAG_adc_moisture, "ADC%d Channel[%d] Moisture Raw Data: %d", ADC_UNIT_1 + 1, ADC_CHANNEL_YL69, adc_value);
 	
 	moisture = (float) ( YL69_VALUE_MAX - adc_value ) * 0.0244; // 100/4095 = 0.0244
 	
-	ESP_LOGI(ADC_BATTERY_TAG, "ADC%d Channel[%d] Moisture: %f ", ADC_UNIT_1 + 1, ADC_CHANNEL_YL69, moisture);
+	ESP_LOGI(TAG_adc_moisture, "ADC%d Channel[%d] Moisture: %f ", ADC_UNIT_1 + 1, ADC_CHANNEL_YL69, moisture);
 	
     return  moisture;
 }
