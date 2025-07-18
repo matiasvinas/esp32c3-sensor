@@ -139,14 +139,20 @@ float adc_yl69_read()
 		ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle, ADC_CHANNEL_YL69, &adc_one_shot));
 		adc_value += adc_one_shot;
 	}
-	
 	adc_value /= NO_OF_SAMPLES;	
 	
-	ESP_LOGI(TAG_adc_moisture, "ADC%d Channel[%d] Moisture Raw Data: %d", ADC_UNIT_1 + 1, ADC_CHANNEL_YL69, adc_value);
+	//Obtain voltage and convert to V
+	int voltage_mv = 0;
+	ESP_ERROR_CHECK(adc_cali_raw_to_voltage(adc1_cali_chan4_handle, adc_value, &voltage_mv));
+	ESP_LOGI(TAG_adc_moisture, "ADC%d Channel[%d] Voltage: %d mV", ADC_UNIT_1 + 1, ADC_CHANNEL_YL69, voltage_mv);
 	
-	moisture = (float) ( YL69_VALUE_MAX - adc_value ) * 0.0244; // 100/4095 = 0.0244
-	
-	ESP_LOGI(TAG_adc_moisture, "ADC%d Channel[%d] Moisture: %f ", ADC_UNIT_1 + 1, ADC_CHANNEL_YL69, moisture);
+	//Calculate moisture
+	float voltage = ( (float) voltage_mv ) * 0.001;
+	moisture = -27.654*pow(voltage,3) + 177.63*pow(voltage,2) - 388.04*voltage + 308.98; 
+	moisture = roundf(moisture * 100) * 0.01;
+	if(moisture > 100) {moisture = 99.99; };
+	if(moisture < 0) {moisture = 0; };
+	ESP_LOGI(TAG_adc_moisture, "ADC%d Channel[%d] Moisture: %.2f ", ADC_UNIT_1 + 1, ADC_CHANNEL_YL69, moisture);
 	
     return  moisture;
 }

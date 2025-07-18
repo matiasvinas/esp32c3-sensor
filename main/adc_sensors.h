@@ -9,6 +9,7 @@
 #define MAIN_ADC_SENSORS_H_
 
 #include <stdio.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
