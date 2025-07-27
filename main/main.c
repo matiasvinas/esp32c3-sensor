@@ -4,15 +4,17 @@
  * Date: February 2025 
  */
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <inttypes.h>
 
 #include "esp_log.h"
 #include "nvs_flash.h"
-
+#include "driver/gpio.h"
 /* power management */
 #include "esp_pm.h"
+#include "esp_bt.h"
 
 #include "esp_ble_mesh_defs.h"
 #include "esp_ble_mesh_common_api.h"
@@ -53,6 +55,8 @@ static int8_t init_int_var = 0;
 
 static float s_temperature = 0.0;
 
+static esp_ble_mesh_msg_ctx_t ctx_for_gateway;
+
 void sensor_hum_readTask(void);
 void sensor_temp_readTask(void);
 void sensor_battery_readTask(void);
@@ -71,7 +75,7 @@ static uint8_t dev_uuid[ESP_BLE_MESH_OCTET16_LEN] = { 0x32, 0x10, SENSOR_ID };
 static esp_ble_mesh_cfg_srv_t config_server = {
     /* 3 transmissions with 20ms interval */
     .net_transmit = ESP_BLE_MESH_TRANSMIT(2, 20),
-    .relay = ESP_BLE_MESH_RELAY_ENABLED,
+    .relay = ESP_BLE_MESH_RELAY_DISABLED,
     .relay_retransmit = ESP_BLE_MESH_TRANSMIT(2, 20),
     .beacon = ESP_BLE_MESH_BEACON_ENABLED,
 #if defined(CONFIG_BLE_MESH_GATT_PROXY_SERVER)
@@ -200,7 +204,7 @@ static void prov_complete(uint16_t net_idx, uint16_t addr, uint8_t flags, uint32
 {
     ESP_LOGI(TAG_bt, "net_idx 0x%03x, addr 0x%04x", net_idx, addr);
     ESP_LOGI(TAG_bt, "flags 0x%02x, iv_index 0x%08" PRIx32, flags, iv_index);
-
+    
     /* Initialize the temperature and humidity variables  */
     net_buf_simple_add_le24(&data_temperature, init_float_var);
     net_buf_simple_add_le16(&data_soil_moisture, init_int_var);
@@ -244,7 +248,7 @@ static void ble_mesh_provisioning_cb(esp_ble_mesh_prov_cb_event_t event,
 static void ble_mesh_config_server_cb(esp_ble_mesh_cfg_server_cb_event_t event,
                                               esp_ble_mesh_cfg_server_cb_param_t *param)
 {
-    if (event == ESP_BLE_MESH_CFG_SERVER_STATE_CHANGE_EVT) {
+    if (event == ESP_BLE_MESH_CFG_SERVER_STATE_CHANGE_EVT) {                
         switch (param->ctx.recv_op) {
         case ESP_BLE_MESH_MODEL_OP_APP_KEY_ADD:
             ESP_LOGI(TAG_bt, "ESP_BLE_MESH_MODEL_OP_APP_KEY_ADD");
@@ -252,6 +256,10 @@ static void ble_mesh_config_server_cb(esp_ble_mesh_cfg_server_cb_event_t event,
                 param->value.state_change.appkey_add.net_idx,
                 param->value.state_change.appkey_add.app_idx);
             ESP_LOG_BUFFER_HEX("AppKey", param->value.state_change.appkey_add.app_key, 16);
+            ctx_for_gateway.net_idx = param->value.state_change.appkey_add.net_idx;
+            ctx_for_gateway.app_idx = param->value.state_change.appkey_add.app_idx;
+            ctx_for_gateway.addr = 0x0001;
+            ctx_for_gateway.send_ttl = 0;
             break;
         case ESP_BLE_MESH_MODEL_OP_MODEL_APP_BIND:
             ESP_LOGI(TAG_bt, "ESP_BLE_MESH_MODEL_OP_MODEL_APP_BIND");
@@ -528,6 +536,66 @@ send:
     
 }
 
+static void ble_mesh_publish_sensor_status()
+{
+    uint8_t *status = NULL;
+    uint16_t buf_size = 0;
+    uint16_t length = 0;
+    uint32_t mpid = 0;
+    esp_err_t err;
+    int i;
+
+    /**
+     * Sensor Data state from Mesh Model Spec
+     * |--------Field--------|-Size (octets)-|------------------------Notes-------------------------|
+     * |----Property ID 1----|-------2-------|--ID of the 1st device property of the sensor---------|
+     * |-----Raw Value 1-----|----variable---|--Raw Value field defined by the 1st device property--|
+     * |----Property ID 2----|-------2-------|--ID of the 2nd device property of the sensor---------|
+     * |-----Raw Value 2-----|----variable---|--Raw Value field defined by the 2nd device property--|
+     * | ...... |
+     * |----Property ID n----|-------2-------|--ID of the nth device property of the sensor---------|
+     * |-----Raw Value n-----|----variable---|--Raw Value field defined by the nth device property--|
+     */
+    for (i = 0; i < ARRAY_SIZE(sensor_states); i++) {
+        esp_ble_mesh_sensor_state_t *state = &sensor_states[i];
+        if (state->sensor_data.length == ESP_BLE_MESH_SENSOR_DATA_ZERO_LEN) {
+            buf_size += ESP_BLE_MESH_SENSOR_DATA_FORMAT_B_MPID_LEN;
+        } else {
+            /* Use "state->sensor_data.length + 1" because the length of sensor data is zero-based. */
+            if (state->sensor_data.format == ESP_BLE_MESH_SENSOR_DATA_FORMAT_A) {
+                buf_size += ESP_BLE_MESH_SENSOR_DATA_FORMAT_A_MPID_LEN + state->sensor_data.length + 1;
+            } else {
+                buf_size += ESP_BLE_MESH_SENSOR_DATA_FORMAT_B_MPID_LEN + state->sensor_data.length + 1;
+            }
+        }
+    }
+
+    status = (uint8_t *)calloc(1, buf_size);
+    if (!status) {
+        ESP_LOGE(TAG_bt, "No memory for sensor status!");
+        return;
+    }
+
+ 
+    for (i = 0; i < ARRAY_SIZE(sensor_states); i++) {
+        length += ble_mesh_get_sensor_data(&sensor_states[i], status + length);
+    }
+
+    ESP_LOG_BUFFER_HEX("Sensor Data", status, length);
+
+	err = esp_ble_mesh_server_model_send_msg(sensor_server.model, 
+			&ctx_for_gateway, ESP_BLE_MESH_MODEL_OP_SENSOR_STATUS,
+			length, status);
+
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG_bt, "Failed to publish Sensor Status");
+    }
+    free(status);
+    ESP_LOGI(TAG_bt, "PUBLISH MESSAGE STATUS - EXITING");
+    
+    
+}
+
 static void ble_mesh_send_sensor_column_status(esp_ble_mesh_sensor_server_cb_param_t *param)
 {
     uint8_t *status = NULL;
@@ -638,7 +706,7 @@ static void ble_mesh_sensor_server_cb(esp_ble_mesh_sensor_server_cb_event_t even
         default:
             ESP_LOGE(TAG_bt, "Unknown Sensor Set opcode 0x%04" PRIx32, param->ctx.recv_op);
             break;
-        }
+        } 
         break;
     default:
         ESP_LOGE(TAG_bt, "Unknown Sensor Server event %d", event);
@@ -748,7 +816,7 @@ void app_main(void)
     esp_pm_config_t pm_config = {
             .max_freq_mhz = MAX_CPU_FREQ_MHZ,
             .min_freq_mhz = MIN_CPU_FREQ_MHZ,
-            .light_sleep_enable = true
+            .light_sleep_enable = false
     };
     ESP_ERROR_CHECK( esp_pm_configure(&pm_config) );
 
@@ -757,6 +825,8 @@ void app_main(void)
         ESP_LOGE(TAG_main, "esp32_bluetooth_init failed (err %d)", err);
         return;
     }
+    
+    esp_bt_sleep_enable();
 
     ble_mesh_get_dev_uuid(dev_uuid);
 
@@ -765,13 +835,26 @@ void app_main(void)
     if (err) {
         ESP_LOGE(TAG_main, "Bluetooth mesh init failed (err %d)", err);
     }
-    
+
     /* Initialize ds18b20 temperature sensor */
-    ds18b20_init();
+    //ds18b20_init();
+	ESP_LOGI(TAG_main, "Main finished");
 	
-	while(1)
-	{
-		ESP_LOGI(TAG_main, "eternal loop");
-		vTaskDelay(pdMS_TO_TICKS(5000));	
+	uint8_t data_to_publish = 8;
+	
+	
+	
+	while(1){
+		vTaskDelay(5000 / portTICK_PERIOD_MS);
+
+		ble_mesh_publish_sensor_status();
+            
+		//err = esp_ble_mesh_model_publish(sensor_server.model, ESP_BLE_MESH_MODEL_OP_SENSOR_STATUS,sizeof(data_to_publish),&data_to_publish, ROLE_NODE);
+    	if (err) {
+        	ESP_LOGE(TAG_main, "Mesh model send message  failed(err %d)", err);
+    	}
 	}
+	
+
+    
 }
