@@ -911,12 +911,13 @@ void app_main(void)
 		gpio_reset_pin(8);	
 
 		//publish values
+/*
 		if(client_connected == true)
 		{
 			ESP_LOGI(TAG_main, "client connected. Sending status"); 
 			ble_mesh_publish_sensor_status();	
 		}
-		
+*/		
 		//delay 60 sec
 		vTaskDelay(10000 / portTICK_PERIOD_MS);
 	}
