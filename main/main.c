@@ -10,6 +10,8 @@
 #include <inttypes.h>
 
 #include "esp_log.h"
+#include "host/ble_gap.h"
+#include "mesh/main.h"
 #include "nvs_flash.h"
 #include "driver/gpio.h"
 /* power management */
@@ -27,6 +29,8 @@
 
 #include "ds18b20_custom.h"
 #include "adc_sensors.h"
+
+#include "led_strip.h"
 
 #define TAG_bt "Bluetooth"
 #define TAG_main "Main"
@@ -55,6 +59,10 @@ static int8_t init_int_var = 0;
 
 static float s_temperature = 0.0;
 
+static bool client_connected = false;
+
+static led_strip_handle_t led_strip;
+
 static esp_ble_mesh_msg_ctx_t ctx_for_gateway;
 
 void sensor_hum_readTask(void);
@@ -69,7 +77,7 @@ void sensor_battery_readTask(void);
 
 /* dev_uuid[0] and dev_uuid[1] used to identify Mesh */
 /* dev_uuid[2] used to identify Sensor in Mesh */
-#define SENSOR_ID					0x01
+#define SENSOR_ID					0x02
 static uint8_t dev_uuid[ESP_BLE_MESH_OCTET16_LEN] = { 0x32, 0x10, SENSOR_ID };
 
 static esp_ble_mesh_cfg_srv_t config_server = {
@@ -233,6 +241,7 @@ static void ble_mesh_provisioning_cb(esp_ble_mesh_prov_cb_event_t event,
         ESP_LOGI(TAG_bt, "ESP_BLE_MESH_NODE_PROV_COMPLETE_EVT");
         prov_complete(param->node_prov_complete.net_idx, param->node_prov_complete.addr,
             param->node_prov_complete.flags, param->node_prov_complete.iv_index);
+        //bt_mesh_lpn_set(true, false);
         break;
     case ESP_BLE_MESH_NODE_PROV_RESET_EVT:
         ESP_LOGI(TAG_bt, "ESP_BLE_MESH_NODE_PROV_RESET_EVT");
@@ -240,9 +249,33 @@ static void ble_mesh_provisioning_cb(esp_ble_mesh_prov_cb_event_t event,
     case ESP_BLE_MESH_NODE_SET_UNPROV_DEV_NAME_COMP_EVT:
         ESP_LOGI(TAG_bt, "ESP_BLE_MESH_NODE_SET_UNPROV_DEV_NAME_COMP_EVT, err_code %d", param->node_set_unprov_dev_name_comp.err_code);
         break;
+    case ESP_BLE_MESH_LPN_ENABLE_COMP_EVT:
+        ESP_LOGI(TAG_bt, "ESP_BLE_MESH_LPN_ENABLE_COMP_EVT");
+        break;
+    case ESP_BLE_MESH_LPN_DISABLE_COMP_EVT:
+        ESP_LOGI(TAG_bt, "ESP_BLE_MESH_LPN_DISABLE_COMP_EVT");
+        break;
+    case ESP_BLE_MESH_LPN_POLL_COMP_EVT:
+        ESP_LOGI(TAG_bt, "ESP_BLE_MESH_LPN_POLL_COMP_EVT");
+        break;
+    case ESP_BLE_MESH_LPN_FRIENDSHIP_ESTABLISH_EVT:
+        ESP_LOGI(TAG_bt, "ESP_BLE_MESH_LPN_FRIENDSHIP_ESTABLISH_EVT");
+        break;
+    case ESP_BLE_MESH_LPN_FRIENDSHIP_TERMINATE_EVT:
+        ESP_LOGI(TAG_bt, "ESP_BLE_MESH_LPN_FRIENDSHIP_TERMINATE_EVT");
+        break;
+    case ESP_BLE_MESH_FRIEND_FRIENDSHIP_ESTABLISH_EVT:
+        ESP_LOGI(TAG_bt, "ESP_BLE_MESH_LPN_FRIENDSHIP_TERMINATE_EVT");
+        break;
+    case ESP_BLE_MESH_FRIEND_FRIENDSHIP_TERMINATE_EVT:
+        ESP_LOGI(TAG_bt, "ESP_BLE_MESH_LPN_FRIENDSHIP_TERMINATE_EVT");
+        break;
     default:
         break;
     }
+    
+
+    
 }
 
 static void ble_mesh_config_server_cb(esp_ble_mesh_cfg_server_cb_event_t event,
@@ -268,6 +301,9 @@ static void ble_mesh_config_server_cb(esp_ble_mesh_cfg_server_cb_event_t event,
                 param->value.state_change.mod_app_bind.app_idx,
                 param->value.state_change.mod_app_bind.company_id,
                 param->value.state_change.mod_app_bind.model_id);
+                
+                client_connected = true;
+                
             break;
         case ESP_BLE_MESH_MODEL_OP_MODEL_SUB_ADD:
             ESP_LOGI(TAG_bt, "ESP_BLE_MESH_MODEL_OP_MODEL_SUB_ADD");
@@ -665,14 +701,7 @@ static void ble_mesh_sensor_server_cb(esp_ble_mesh_sensor_server_cb_event_t even
             /* Here functions are executed when receives a get from Gateway*/
         case ESP_BLE_MESH_MODEL_OP_SENSOR_GET:
             ESP_LOGI(TAG_bt, "ESP_BLE_MESH_MODEL_OP_SENSOR_GET");
-            sensor_temp_readTask();
-            adc_sensors_init();
-            sensor_hum_readTask();
-            sensor_battery_readTask();
-            adc_sensors_deinit();
             ble_mesh_send_sensor_status(param);
-            
-            ESP_LOGI(TAG_bt, "ESP_BLE_MESH_MODEL_OP_SENSOR_GET - EXITING");
             break;
         case ESP_BLE_MESH_MODEL_OP_SENSOR_COLUMN_GET:
             ESP_LOGI(TAG_bt, "ESP_BLE_MESH_MODEL_OP_SENSOR_COLUMN_GET");
@@ -739,7 +768,7 @@ static esp_err_t ble_mesh_init(void)
     return ESP_OK;
 }
 
-void sensor_temp_readTask(void)
+void read_sensor_temperature(void)
 {
         uint8_t is_temp_below_zero = false;
         
@@ -766,7 +795,7 @@ void sensor_temp_readTask(void)
         ESP_LOGI(TAG_sensor, "temperature[3]: %x", data_temperature.data[3]);
 }
 
-void sensor_hum_readTask(void)
+void read_sensor_moisture(void)
 {				
 		/* read data from sensor */
 		float adc_moisture_reading = adc_yl69_read();
@@ -783,7 +812,7 @@ void sensor_hum_readTask(void)
         ESP_LOGI(TAG_sensor, "moisture[1]: %x", data_soil_moisture.data[1]);        
 }
 
-void sensor_battery_readTask(void)
+void read_sensor_battery(void)
 {				
 		/* read data from sensor */
 		uint16_t adc_battery_level = adc_battery_read();
@@ -813,10 +842,11 @@ void app_main(void)
     // Configure dynamic frequency scaling:
     // maximum and minimum frequencies are set in sdkconfig,
     // automatic light sleep is enabled if tickless idle support is enabled.
+
     esp_pm_config_t pm_config = {
             .max_freq_mhz = MAX_CPU_FREQ_MHZ,
             .min_freq_mhz = MIN_CPU_FREQ_MHZ,
-            .light_sleep_enable = false
+            .light_sleep_enable = true
     };
     ESP_ERROR_CHECK( esp_pm_configure(&pm_config) );
 
@@ -825,8 +855,6 @@ void app_main(void)
         ESP_LOGE(TAG_main, "esp32_bluetooth_init failed (err %d)", err);
         return;
     }
-    
-    esp_bt_sleep_enable();
 
     ble_mesh_get_dev_uuid(dev_uuid);
 
@@ -835,26 +863,62 @@ void app_main(void)
     if (err) {
         ESP_LOGE(TAG_main, "Bluetooth mesh init failed (err %d)", err);
     }
+	
+	err = esp_bt_sleep_enable();
+	if (err) {
+        ESP_LOGE(TAG_main, "modem poer failed(err %d)", err);
+    }
+    
+	led_strip_config_t strip_config = {
+    	.strip_gpio_num = 8,
+    	.max_leds = 1, // at least one LED on board
+	};
+ 	led_strip_rmt_config_t rmt_config = {
+    	.resolution_hz = 10 * 1000 * 1000, // 10MHz
+    	.flags.with_dma = false,
+	}; 
+	
+	while(1)
+	{
+		ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip));
+		led_strip_set_pixel(led_strip, 0, 255, 255, 255);
+        led_strip_refresh(led_strip);
 
-    /* Initialize ds18b20 temperature sensor */
-    //ds18b20_init();
-	ESP_LOGI(TAG_main, "Main finished");
-	
-	uint8_t data_to_publish = 8;
-	
-	
-	
-	while(1){
-		vTaskDelay(5000 / portTICK_PERIOD_MS);
+		//init 1-wire
+		ds18b20_init();		
+				
+		//init adc periph
+		adc_sensors_init();
+		
+		//read temperature
+		read_sensor_temperature();
 
-		ble_mesh_publish_sensor_status();
-            
-		//err = esp_ble_mesh_model_publish(sensor_server.model, ESP_BLE_MESH_MODEL_OP_SENSOR_STATUS,sizeof(data_to_publish),&data_to_publish, ROLE_NODE);
-    	if (err) {
-        	ESP_LOGE(TAG_main, "Mesh model send message  failed(err %d)", err);
-    	}
+		//read moisture
+		read_sensor_moisture();
+		
+		//read voltage
+		read_sensor_battery();
+
+		//de init 1-wire
+		ds18b20_deinit();
+	
+		//de init adc periph
+		adc_sensors_deinit();
+		
+		//turn off led
+		led_strip_clear(led_strip);
+		led_strip_del(led_strip);
+		gpio_reset_pin(8);	
+
+		//publish values
+		if(client_connected == true)
+		{
+			ESP_LOGI(TAG_main, "client connected. Sending status"); 
+			ble_mesh_publish_sensor_status();	
+		}
+		
+		//delay 60 sec
+		vTaskDelay(10000 / portTICK_PERIOD_MS);
 	}
-	
-
     
 }

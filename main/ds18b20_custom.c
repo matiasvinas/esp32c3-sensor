@@ -7,11 +7,11 @@
 
 static int s_ds18b20_device_num = 0;
 static ds18b20_device_handle_t s_ds18b20s[ONEWIRE_MAX_DS18B20];
+static onewire_bus_handle_t bus = NULL;
 
 void ds18b20_init(void)
 {
     // install 1-wire bus
-    onewire_bus_handle_t bus = NULL;
     onewire_bus_config_t bus_config = {
         .bus_gpio_num = ONEWIRE_BUS_GPIO,
     };
@@ -42,6 +42,20 @@ void ds18b20_init(void)
     } while (search_result != ESP_ERR_NOT_FOUND);
     ESP_ERROR_CHECK(onewire_del_device_iter(iter));
     ESP_LOGI("DS18B20", "Searching done, %d DS18B20 device(s) found", s_ds18b20_device_num);
+}
+
+void ds18b20_deinit(void)
+{
+	ESP_LOGI("DS18B20", "Deinitializing ds18b20 sensor");
+	//delete ds18b20 device handles
+	for (int i = 0; i < s_ds18b20_device_num; i++) 
+	{
+    	ESP_ERROR_CHECK(ds18b20_del_device(s_ds18b20s[i]));
+	}
+	s_ds18b20_device_num = 0;
+	
+	//delete 1-wire bus
+	ESP_ERROR_CHECK(onewire_bus_del(bus));
 }
 
 float ds18b20_read(void)

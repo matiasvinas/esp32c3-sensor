@@ -16,6 +16,8 @@
 /* func declaratins */
 void ds18b20_init(void);
 
+void ds18b20_deinit(void);
+
 float ds18b20_read(void);
 
 void float_to_uint(float var1, uint8_t * var);
