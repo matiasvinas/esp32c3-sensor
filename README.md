@@ -56,15 +56,21 @@ El estado del sensor está compuesto por:
 - Los primeros 16 bits permiten ser identificados por el dispositivo [ESP32C3-gateway](https://github.com/matiasvinas/esp32c3-gateway) y ser provisionados por el mismo.
 - Los siguientes 8 bits permiten a los dispositivos sensor distinguirse del resto de los dispositivos de la familia. 
 - El resto de los bits son generados de forma aleatoria por la librería BLE Mesh. 
+
 ### Algoritmo para el envío de datos
 
 1. El dispositivo sensor recibe un GET_STATE_MESSAGE del dispositivo [ESP32C3-gateway](https://github.com/matiasvinas/esp32c3-gateway).
+2. El dispositivo envía los valores almacenados al dispositivo [ESP32C3-gateway](https://github.com/matiasvinas/esp32c3-gateway).
+
+### Algoritmo para el envío de datos
+
+1. El dispositivo inicializa todos los drivers.
 2. El dispositivo sensa y almacena el valor de temperatura.
-3. El dispositivo inicializa los drivers ADC utilizados por el sensor de humedad y tensión de batería.
-4. El dispositivo sensa y almacena el valor de humedad.
+3. El dispositivo sensa y almacena el valor de humedad.
 5. El dispositivo sensa y almacena el valor de tensión de batería.
-6. El dispositivo desinicializa los drivers ADC utilizados por el sensor de humedad y tensión de batería.
-7. El dispositivo envía los valores almacenados al dispositivo [ESP32C3-gateway](https://github.com/matiasvinas/esp32c3-gateway).
+6. El dispositivo desinicializa todos los drivers.
+7. Se ejecuta un delay de tiempo predeterminado.
+8. Se vuelve al paso 1.
 
 ## Consumo eficiente de energía
 
