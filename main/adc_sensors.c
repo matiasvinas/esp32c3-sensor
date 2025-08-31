@@ -125,6 +125,8 @@ uint32_t adc_battery_read(void)
 	ESP_ERROR_CHECK(adc_cali_raw_to_voltage(adc1_cali_chan3_handle, adc_value, &voltage));
     ESP_LOGI(TAG_adc_battery, "ADC%d Channel[%d] Battery Voltage: %d mV", ADC_UNIT_1 + 1, ADC_CHANNEL_BATTERY, voltage);
     
+    
+    
     return voltage;
 }
 

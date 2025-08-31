@@ -1,80 +1,61 @@
-# Sistema de monitoreo y gestión remota de invernaderos - Sensor
-Proyecto realizado dentro del marco del Trabajo Profesional de Ingeniería Eletrónica de la Facultad de Ingeniería de la Universidad de Buenos Aires
+# Sistema de monitoreo y gestión remota de invernaderos 
+
+Proyecto realizado dentro del marco del Trabajo Profesional de Ingeniería Eletrónica de la Facultad de Ingeniería de la Universidad de Buenos Aires.
+
 
 ## Contenido 
-Este repositorio contiene el firmware del dispositivo de los sensores del sistema.
+Este repositorio contiene el firmware, la descripción y configuración del dispositivo nodo sensor del sistema. Para ver la descripción completa del sistema acceder a [esp32c3-gateway](https://github.com/matiasvinas/esp32c3-gateway). 
 
-## Características del Hardware
-- Microcontrolador: ESP32-C3-WROOM-02 de la empresa [Espressif](https://www.espressif.com/)
-- Framework: ESP-IDF
-- Sensor Temperatura: DS18B20
-- Sensor Humedad suelo: YL69
-- Conversor Buck: Mini360
-- Batería: HY 18650 3.7V Li-ion (2 unidades en serie)
+# Nodo sensor
 
-## Características de Variables
+## Características
+- Placa de desarrollo: ESP32-C3-WROOM-02 de la empresa [Espressif](https://www.espressif.com/).
+- Framework: ESP-IDF v5.2.2.
+- Sensor de temperatura DS18B20.
+- Sensor de humedad del suelo YL-69.
+- Reductor de tensión mini-360.
+- 2 baterías HY 18650 3.7V Li-ion.
+## Conexión de los sensores a la placa de desarrollo
 
-### Temperatura
-- Rango: -55 a +125 °C
-- Precisión: +-0.5 °C en el rango de -10°C a +85°C
-- Protocolo de comunicación: 1-Wire
-- Tensión de Operación: 3.3 V
-- Modelo: DS18B20
+- La salida DATA del sensor de temperatura fue conectada al GPIO 09 de la placa de desarrollo.
+- La salida del divisor de tensión fue conectada al GPIO 03 de la placa de desarrollo.
+- La salida analógica del sensor módulo YL-69 fue conectada al GPIO 03 de la placa de desarrollo.
 
-### Humedad
-- Rango: detecta niveles de humedad del suelo desde seco hasta saturado.
-- Tensión de entrada: 3.3 V
-- Modelo: YL69
+## Configuración para la comunicación BLE Mesh entre los nodos sensores y el nodo *gateway*
+1. Selección del stack de NimBLE
+    1. Abrir el directorio del proyecto y correr el siguiente comando:
+        ```
+        idf.py menuconfig
+        ```
+    2. Navegar a `Component Config -> Bluetooth -> Bluetooth -> Host`
+    3. En `Host` seleccionar `NimBLE - BLE Only`.
+    4. Guardar cambios y salir.
 
+2. Definición de ID de la malla y de los sensores
+    1. Definir `SENSOR_ID_MESH_0` y `SENSOR_ID_MESH_1` en el archivo `main/main.c` para identificar a todos los nodos que deben ser aprovisionados por el nodo *gateway*. Este ID debe coincidir con el ID definido para la malla en el nodo *gateway* ([esp32c3-gateway](https://github.com/matiasvinas/esp32c3-gateway)).
 
-### Batería
-- Se utiliza un divisor resistivo para poder muestrear una tensión compatible con el ADC del ESP32C3
+    2. Definir un `SENSOR_ID_NODE` en el archivo `main/main.c` para cada uno de los nodos sensores. Este valor debe ser diferente en cada uno de los firmware de los nodos sensores. 
+        ```
+        /* los primeros 2 bytes se usan para identificar a todos los nodos de la malla*/
+        /* el 3° byte se usa para distinguir cada nodo de la malla */
+        #define SENSOR_ID_MESH_0                    0x32    
+        #define SENSOR_ID_MESH_1                    0x10
+        #define SENSOR_ID_NODE      				0x01
+        static uint8_t dev_uuid[ESP_BLE_MESH_OCTET16_LEN] = { SENSOR_ID_MESH_0, SENSOR_ID_MESH_1, SENSOR_ID_NODE };
+        ```
 
-![Diagrama del dispositivo Sensor](images/battery_diagram.png)
+## Configuración de la frecuencia de medición de los sensores
 
-## Comunicación de datos
-
-### Bluetooth
-
-El dispositivo usa Bluetooth 5.0 mediante la librería NimBLE.
-El dispositivo usa Bluetooth BLE Mesh para la comunicación con el [ESP32C3-gateway](https://github.com/matiasvinas/esp32c3-gateway)
-
-### BLE Mesh - Sensor Server Model
-
-El "Modelo Sensor Servidor" es el modelo usado para exponer una serie de estado de sensores.
-El "Modelo Cliente Servidor" es el modelo utilizado para consumir los valores de los estados expuestos por el Servidor.
-El estado del sensor está compuesto por:
-- Sensor Descriptor state
-- Sensor Setting state
-- Sensor Cadence state
-- Sensor Data state
-- Sensor series Column state
-
-### Identificación del dispositivo sensor
-
-- Cada dispositivo sensor es distinguido por su UUID de 128 bits
-- Los primeros 16 bits permiten ser identificados por el dispositivo [ESP32C3-gateway](https://github.com/matiasvinas/esp32c3-gateway) y ser provisionados por el mismo.
-- Los siguientes 8 bits permiten a los dispositivos sensor distinguirse del resto de los dispositivos de la familia. 
-- El resto de los bits son generados de forma aleatoria por la librería BLE Mesh. 
-### Algoritmo para el envío de datos
-
-1. El dispositivo sensor recibe un GET_STATE_MESSAGE del dispositivo [ESP32C3-gateway](https://github.com/matiasvinas/esp32c3-gateway).
-2. El dispositivo sensa y almacena el valor de temperatura.
-3. El dispositivo inicializa los drivers ADC utilizados por el sensor de humedad y tensión de batería.
-4. El dispositivo sensa y almacena el valor de humedad.
-5. El dispositivo sensa y almacena el valor de tensión de batería.
-6. El dispositivo desinicializa los drivers ADC utilizados por el sensor de humedad y tensión de batería.
-7. El dispositivo envía los valores almacenados al dispositivo [ESP32C3-gateway](https://github.com/matiasvinas/esp32c3-gateway).
-
-## Consumo eficiente de energía
+1. Definir la variable `SAMPLE_DELAY` en el archivo `main/main.c` para establecer el tiempo transcurrido entre mediciones.
+    ```
+    /* tiempo de espera entre ronda de mediciones */
+    #define SAMPLE_DELAY                30000
+    ```
+    
+## Configuración del consumo eficiente de energía
 
 - Se implementó Light Sleep Mode dado que presenta la mejor opción para reducir el consumo de energía sin comprometer la conexión Bluetooth.
 - Los drivers ADC utilizados por el sensor de humedad y tensión de batería son inicializados antes de obtener el valor y desinicializados luego de almacenar dicho valor.
-
-## Notas
-- Se modificó el archivo ble_mesh_example_init.c para poder definir de manera explícita los 8 bits que identifican al dispositivo sensor del resto, en específico la función: ble_mesh_get_dev_uuid().
-
-
 
 ## Esquemático
 ![Diagrama del dispositivo Sensor](images/sensor_diagram.png)
@@ -87,10 +68,5 @@ El estado del sensor está compuesto por:
 
 [ESP32 Example - Bluetooth Power Save](https://github.com/espressif/esp-idf/blob/v5.4.1/examples/bluetooth/nimble/power_save/README.md)
 
-
-
-
-## Cosas pendientes por hacer
-
-- Emprolijar el código, eliminar variables innecesarias, remover comentarios y valores harcodeados
-- Verificar consumo de corriente del dispositivo
+## Notas
+- Se modificó el archivo ble_mesh_example_init.c para poder definir de manera explícita los 8 bits que identifican al dispositivo sensor del resto, en específico la función: ble_mesh_get_dev_uuid().

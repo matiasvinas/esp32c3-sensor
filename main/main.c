@@ -36,6 +36,8 @@
 #define TAG_main "Main"
 #define TAG_sensor "Sensor"
 
+// tiempo de espera entre ronda de mediciones
+#define SAMPLE_DELAY                30000
 
 #define CID_ESP     0x02E5
 
@@ -75,10 +77,12 @@ void sensor_battery_readTask(void);
 #define SENSOR_MEASURE_PERIOD       ESP_BLE_MESH_SENSOR_NOT_APPL_MEASURE_PERIOD
 #define SENSOR_UPDATE_INTERVAL      ESP_BLE_MESH_SENSOR_NOT_APPL_UPDATE_INTERVAL
 
-/* dev_uuid[0] and dev_uuid[1] used to identify Mesh */
-/* dev_uuid[2] used to identify Sensor in Mesh */
-#define SENSOR_ID					0x02
-static uint8_t dev_uuid[ESP_BLE_MESH_OCTET16_LEN] = { 0x32, 0x10, SENSOR_ID };
+/* los primeros 2 bytes se usan para identificar a todos los nodos de la malla*/
+/* el 3° byte se usa para distinguir cada nodo de la malla */
+#define SENSOR_ID_MESH_0                    0x32    
+#define SENSOR_ID_MESH_1                    0x10
+#define SENSOR_ID_NODE      				0x02
+static uint8_t dev_uuid[ESP_BLE_MESH_OCTET16_LEN] = { SENSOR_ID_MESH_0, SENSOR_ID_MESH_1, SENSOR_ID_NODE };
 
 static esp_ble_mesh_cfg_srv_t config_server = {
     /* 3 transmissions with 20ms interval */
@@ -844,7 +848,7 @@ void app_main(void)
     // automatic light sleep is enabled if tickless idle support is enabled.
 
     esp_pm_config_t pm_config = {
-            .max_freq_mhz = MAX_CPU_FREQ_MHZ,
+            .max_freq_mhz = 80,
             .min_freq_mhz = MIN_CPU_FREQ_MHZ,
             .light_sleep_enable = true
     };
@@ -880,10 +884,6 @@ void app_main(void)
 	
 	while(1)
 	{
-		ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip));
-		led_strip_set_pixel(led_strip, 0, 255, 255, 255);
-        led_strip_refresh(led_strip);
-
 		//init 1-wire
 		ds18b20_init();		
 				
@@ -906,20 +906,16 @@ void app_main(void)
 		adc_sensors_deinit();
 		
 		//turn off led
+		ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip));
+		led_strip_set_pixel(led_strip, 0, 255, 255, 255);
+        led_strip_refresh(led_strip);
+        
 		led_strip_clear(led_strip);
 		led_strip_del(led_strip);
 		gpio_reset_pin(8);	
-
-		//publish values
-/*
-		if(client_connected == true)
-		{
-			ESP_LOGI(TAG_main, "client connected. Sending status"); 
-			ble_mesh_publish_sensor_status();	
-		}
-*/		
+	
 		//delay 60 sec
-		vTaskDelay(10000 / portTICK_PERIOD_MS);
+		vTaskDelay(SAMPLE_DELAY / portTICK_PERIOD_MS);
 	}
     
 }
