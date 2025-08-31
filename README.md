@@ -68,5 +68,7 @@ Este repositorio contiene el firmware, la descripción y configuración del disp
 
 [ESP32 Example - Bluetooth Power Save](https://github.com/espressif/esp-idf/blob/v5.4.1/examples/bluetooth/nimble/power_save/README.md)
 
-## Notas
-- Se modificó el archivo ble_mesh_example_init.c para poder definir de manera explícita los 8 bits que identifican al dispositivo sensor del resto, en específico la función: ble_mesh_get_dev_uuid().
+## Cosas pendientes por hacer
+
+- Emprolijar el código, eliminar variables innecesarias, remover comentarios y valores harcodeados
+- Verificar consumo de corriente del dispositivo
