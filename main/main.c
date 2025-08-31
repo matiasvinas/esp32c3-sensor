@@ -14,74 +14,72 @@
 #include "mesh/main.h"
 #include "nvs_flash.h"
 #include "driver/gpio.h"
-/* power management */
+
+// power management libs
 #include "esp_pm.h"
 #include "esp_bt.h"
 
+// ble mesh libs
 #include "esp_ble_mesh_defs.h"
 #include "esp_ble_mesh_common_api.h"
 #include "esp_ble_mesh_networking_api.h"
 #include "esp_ble_mesh_provisioning_api.h"
 #include "esp_ble_mesh_config_model_api.h"
 #include "esp_ble_mesh_sensor_model_api.h"
-
 #include "ble_mesh_example_init.h"
 
+// sensors and leds
 #include "ds18b20_custom.h"
 #include "adc_sensors.h"
-
 #include "led_strip.h"
 
 #define TAG_bt "Bluetooth"
 #define TAG_main "Main"
 #define TAG_sensor "Sensor"
 
-// tiempo de espera entre ronda de mediciones
+// delay time between each sensor reading
 #define SAMPLE_DELAY                30000
 
 #define CID_ESP     0x02E5
 
-/* Sensor Property ID */
-#define SENSOR_PROPERTY_ID_0        0x0056  /* Temperature */
-#define SENSOR_PROPERTY_ID_1        0x005B  /* Soil Moisture */
-#define SENSOR_PROPERTY_ID_2        0x005C  /* Battery */
+// Sensor Property ID
+#define SENSOR_PROPERTY_ID_0        0x0056  // Temperature
+#define SENSOR_PROPERTY_ID_1        0x005B  // Soil Moisture
+#define SENSOR_PROPERTY_ID_2        0x005C  // Battery
 
-
+// ADC channels
 #define ADC_YL69_CHANNEL			ADC1_CHANNEL_4
 #define ADC_BATTERY_CHANNEL			ADC1_CHANNEL_3
 
-#define TIME_DELAY					2000
-
-/* CPU FREQ RANGES*/
+// CPU Freq Ranges
 #define MAX_CPU_FREQ_MHZ			160
 #define MIN_CPU_FREQ_MHZ			40
 
-static float init_float_var = 0;
-static int8_t init_int_var = 0;
-
-static float s_temperature = 0.0;
-
-static bool client_connected = false;
-
-static led_strip_handle_t led_strip;
-
-static esp_ble_mesh_msg_ctx_t ctx_for_gateway;
-
-void sensor_hum_readTask(void);
-void sensor_temp_readTask(void);
-void sensor_battery_readTask(void);
-
+// Sensor Descriptor state parameters
 #define SENSOR_POSITIVE_TOLERANCE   ESP_BLE_MESH_SENSOR_UNSPECIFIED_POS_TOLERANCE
 #define SENSOR_NEGATIVE_TOLERANCE   ESP_BLE_MESH_SENSOR_UNSPECIFIED_NEG_TOLERANCE
 #define SENSOR_SAMPLE_FUNCTION      ESP_BLE_MESH_SAMPLE_FUNC_UNSPECIFIED
 #define SENSOR_MEASURE_PERIOD       ESP_BLE_MESH_SENSOR_NOT_APPL_MEASURE_PERIOD
 #define SENSOR_UPDATE_INTERVAL      ESP_BLE_MESH_SENSOR_NOT_APPL_UPDATE_INTERVAL
 
+static float init_float_var = 0;
+static int8_t init_int_var = 0;
+static float s_temperature = 0.0;
+
+static bool client_connected = false;
+
+static led_strip_handle_t led_strip;
+static esp_ble_mesh_msg_ctx_t ctx_for_gateway;
+
+void sensor_hum_readTask(void);
+void sensor_temp_readTask(void);
+void sensor_battery_readTask(void);
+
 /* los primeros 2 bytes se usan para identificar a todos los nodos de la malla*/
 /* el 3° byte se usa para distinguir cada nodo de la malla */
 #define SENSOR_ID_MESH_0                    0x32    
 #define SENSOR_ID_MESH_1                    0x10
-#define SENSOR_ID_NODE      				0x02
+#define SENSOR_ID_NODE      				0x03
 static uint8_t dev_uuid[ESP_BLE_MESH_OCTET16_LEN] = { SENSOR_ID_MESH_0, SENSOR_ID_MESH_1, SENSOR_ID_NODE };
 
 static esp_ble_mesh_cfg_srv_t config_server = {
@@ -277,9 +275,6 @@ static void ble_mesh_provisioning_cb(esp_ble_mesh_prov_cb_event_t event,
     default:
         break;
     }
-    
-
-    
 }
 
 static void ble_mesh_config_server_cb(esp_ble_mesh_cfg_server_cb_event_t event,
@@ -576,12 +571,12 @@ send:
     
 }
 
+// Function to send data to node gateway without waiting a GET message.
 static void ble_mesh_publish_sensor_status()
 {
     uint8_t *status = NULL;
     uint16_t buf_size = 0;
     uint16_t length = 0;
-    uint32_t mpid = 0;
     esp_err_t err;
     int i;
 
@@ -910,11 +905,13 @@ void app_main(void)
 		led_strip_set_pixel(led_strip, 0, 255, 255, 255);
         led_strip_refresh(led_strip);
         
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        
 		led_strip_clear(led_strip);
 		led_strip_del(led_strip);
 		gpio_reset_pin(8);	
 	
-		//delay 60 sec
+		//sample delay
 		vTaskDelay(SAMPLE_DELAY / portTICK_PERIOD_MS);
 	}
     

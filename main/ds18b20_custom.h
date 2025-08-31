@@ -10,7 +10,7 @@
 #include "onewire_bus.h"
 #include "esp_log.h"
 
-#define ONEWIRE_BUS_GPIO    8
+#define ONEWIRE_BUS_GPIO    9
 #define ONEWIRE_MAX_DS18B20 2
 
 /* func declaratins */
