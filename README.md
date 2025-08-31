@@ -4,7 +4,9 @@ Proyecto realizado dentro del marco del Trabajo Profesional de Ingeniería Eletr
 
 
 ## Contenido 
-Este repositorio contiene el firmware, la descripción y configuración del dispositivo nodo sensor del sistema. Para ver la descripción completa del sistema acceder a [esp32c3-gateway](https://github.com/matiasvinas/esp32c3-gateway). 
+Este repositorio contiene el firmware, la descripción y configuración del dispositivo nodo sensor del sistema. 
+
+Para ver la descripción completa del sistema acceder a [esp32c3-gateway](https://github.com/matiasvinas/esp32c3-gateway). 
 
 # Nodo sensor
 
@@ -19,10 +21,10 @@ Este repositorio contiene el firmware, la descripción y configuración del disp
 
 - La salida DATA del sensor de temperatura fue conectada al GPIO 09 de la placa de desarrollo.
 - La salida del divisor de tensión fue conectada al GPIO 03 de la placa de desarrollo.
-- La salida analógica del sensor módulo YL-69 fue conectada al GPIO 03 de la placa de desarrollo.
+- La salida analógica del sensor módulo YL-69 fue conectada al GPIO 04 de la placa de desarrollo.
 
 ## Configuración para la comunicación BLE Mesh entre los nodos sensores y el nodo *gateway*
-1. Selección del stack de NimBLE
+1. Selección del stack de NimBLE:
     1. Abrir el directorio del proyecto y correr el siguiente comando:
         ```
         idf.py menuconfig
@@ -32,9 +34,9 @@ Este repositorio contiene el firmware, la descripción y configuración del disp
     4. Guardar cambios y salir.
 
 2. Definición de ID de la malla y de los sensores
-    1. Definir `SENSOR_ID_MESH_0` y `SENSOR_ID_MESH_1` en el archivo `main/main.c` para identificar a todos los nodos que deben ser aprovisionados por el nodo *gateway*. Este ID debe coincidir con el ID definido para la malla en el nodo *gateway* ([esp32c3-gateway](https://github.com/matiasvinas/esp32c3-gateway)).
+    1. Definir `SENSOR_ID_MESH_0` y `SENSOR_ID_MESH_1` en el archivo `main/main.c` para identificar a todos los nodos que deben ser aprovisionados por el nodo *gateway*. Este ID debe coincidir con el ID definido para la malla en el firmware del nodo *gateway* ([esp32c3-gateway](https://github.com/matiasvinas/esp32c3-gateway)).
 
-    2. Definir un `SENSOR_ID_NODE` en el archivo `main/main.c` para cada uno de los nodos sensores. Este valor debe ser diferente en cada uno de los firmware de los nodos sensores. 
+    2. Definir un `SENSOR_ID_NODE` en el archivo `main/main.c` para cada uno de los nodos sensores. Este valor debe ser diferente en el firmware de cada uno de los nodos sensores. 
         ```
         /* los primeros 2 bytes se usan para identificar a todos los nodos de la malla*/
         /* el 3° byte se usa para distinguir cada nodo de la malla */
@@ -54,8 +56,7 @@ Este repositorio contiene el firmware, la descripción y configuración del disp
     
 ## Configuración del consumo eficiente de energía
 
-- Se implementó Light Sleep Mode dado que presenta la mejor opción para reducir el consumo de energía sin comprometer la conexión Bluetooth.
-- Los drivers ADC utilizados por el sensor de humedad y tensión de batería son inicializados antes de obtener el valor y desinicializados luego de almacenar dicho valor.
+
 
 ## Esquemático
 ![Diagrama del dispositivo Sensor](images/sensor_diagram.png)
@@ -67,8 +68,3 @@ Este repositorio contiene el firmware, la descripción y configuración del disp
 [ESP32 Docs - Sleep Modes ](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/sleep_modes.html)
 
 [ESP32 Example - Bluetooth Power Save](https://github.com/espressif/esp-idf/blob/v5.4.1/examples/bluetooth/nimble/power_save/README.md)
-
-## Cosas pendientes por hacer
-
-- Emprolijar el código, eliminar variables innecesarias, remover comentarios y valores harcodeados
-- Verificar consumo de corriente del dispositivo
