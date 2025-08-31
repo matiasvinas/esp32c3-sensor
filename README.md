@@ -2,11 +2,20 @@
 
 Proyecto realizado dentro del marco del Trabajo Profesional de Ingeniería Eletrónica de la Facultad de Ingeniería de la Universidad de Buenos Aires.
 
-
 ## Contenido 
 Este repositorio contiene el firmware, la descripción y configuración del dispositivo nodo sensor del sistema. 
 
 Para ver la descripción completa del sistema acceder a [esp32c3-gateway](https://github.com/matiasvinas/esp32c3-gateway). 
+
+## Índice
+- [Nodo sensor](#nodo-sensor)
+    - [Características](#características)
+    - [Conexión de los sensores a la placa de desarrollo](#conexión-de-los-sensores-a-la-placa-de-desarrollo)
+    - [Configuración para la comunicación BLE Mesh entre los nodos sensores y el nodo *gateway*](#configuración-para-la-comunicación-ble-mesh-entre-los-nodos-sensores-y-el-nodo-gateway)
+    - [Configuración de la frecuencia de medición de los sensores](#configuración-de-la-frecuencia-de-medición-de-los-sensores)
+    - [Configuración del *modem mode* para el ahorro de energía](#configuración-del-modem-mode-para-el-ahorro-de-energía)
+    - [Esquemático](#esquemático)
+- [Enlaces útiles](#enlaces-útiles)
 
 # Nodo sensor
 
@@ -29,7 +38,7 @@ Para ver la descripción completa del sistema acceder a [esp32c3-gateway](https:
         ```
         idf.py menuconfig
         ```
-    2. Navegar a `Component Config -> Bluetooth -> Bluetooth -> Host`
+    2. Navegar a `Component Config -> Bluetooth -> Host`
     3. En `Host` seleccionar `NimBLE - BLE Only`.
     4. Guardar cambios y salir.
 
@@ -54,14 +63,22 @@ Para ver la descripción completa del sistema acceder a [esp32c3-gateway](https:
     #define SAMPLE_DELAY                30000
     ```
     
-## Configuración del consumo eficiente de energía
+## Configuración del *modem mode* para el ahorro de energía
 
-
+1. Abrir el directorio del proyecto y correr el siguiente comando:
+    ```
+    idf.py menuconfig
+    ```
+2. Navegar a `Component Config-> Bluetooth -> Controller Options -> MODEM SLEEP Options`
+3. Habilitar `[*] Bluetooth modem sleep`.
+4. Habilitar `[*] Bluetooth modem sleep Mode 1`.
+5. En `Bluetooth low power clock` seleccionar `Main crystal`.
+6. Guardar cambios y salir.
 
 ## Esquemático
 ![Diagrama del dispositivo Sensor](images/sensor_diagram.png)
 
-## Enlaces útiles
+# Enlaces útiles
 
 [ESP-BLE-MESH - Sensor Server Client Example](https://github.com/espressif/esp-idf/blob/master/examples/bluetooth/esp_ble_mesh/sensor_models/sensor_client/README.md)
 
