@@ -5,7 +5,7 @@ Proyecto realizado dentro del marco del Trabajo Profesional de Ingeniería Eletr
 ## Contenido 
 Este repositorio contiene el firmware, la descripción y configuración del dispositivo nodo sensor del sistema. 
 
-Para ver la descripción completa del sistema acceder a [esp32c3-gateway](https://github.com/matiasvinas/esp32c3-gateway). 
+Para ver la descripción completa del sistema acceder a [or-platform](https://github.com/matiasvinas/or-platform). 
 
 ## Índice
 - [Nodo sensor](#nodo-sensor)
@@ -43,7 +43,7 @@ Para ver la descripción completa del sistema acceder a [esp32c3-gateway](https:
     4. Guardar cambios y salir.
 
 2. Definición de ID de la malla y de los sensores
-    1. Definir `SENSOR_ID_MESH_0` y `SENSOR_ID_MESH_1` en el archivo `main/main.c` para identificar a todos los nodos que deben ser aprovisionados por el nodo *gateway*. Este ID debe coincidir con el ID definido para la malla en el firmware del nodo *gateway* ([esp32c3-gateway](https://github.com/matiasvinas/esp32c3-gateway)).
+    1. Definir `SENSOR_ID_MESH_0` y `SENSOR_ID_MESH_1` en el archivo `main/main.c` para identificar a todos los nodos que deben ser aprovisionados por el nodo *gateway*. Este ID debe coincidir con el ID definido para la malla en el [firmware del nodo *gateway*](https://github.com/matiasvinas/esp32c3-gateway).
 
     2. Definir un `SENSOR_ID_NODE` en el archivo `main/main.c` para cada uno de los nodos sensores. Este valor debe ser diferente en el firmware de cada uno de los nodos sensores. 
         ```
@@ -85,3 +85,5 @@ Para ver la descripción completa del sistema acceder a [esp32c3-gateway](https:
 [ESP32 Docs - Sleep Modes ](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/sleep_modes.html)
 
 [ESP32 Example - Bluetooth Power Save](https://github.com/espressif/esp-idf/blob/v5.4.1/examples/bluetooth/nimble/power_save/README.md)
+
+[esp32c3-gateway](https://github.com/matiasvinas/esp32c3-gateway)
