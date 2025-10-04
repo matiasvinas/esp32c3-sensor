@@ -10,6 +10,7 @@
 #include <inttypes.h>
 
 #include "esp_log.h"
+#include "esp_sleep.h"
 #include "host/ble_gap.h"
 #include "mesh/main.h"
 #include "nvs_flash.h"
@@ -27,6 +28,9 @@
 #include "esp_ble_mesh_config_model_api.h"
 #include "esp_ble_mesh_sensor_model_api.h"
 #include "ble_mesh_example_init.h"
+
+#include "esp_ble_mesh_networking_api.h"
+
 
 // sensors and leds
 #include "ds18b20_custom.h"
@@ -66,7 +70,8 @@ static float init_float_var = 0;
 static int8_t init_int_var = 0;
 static float s_temperature = 0.0;
 
-static bool client_connected = false;
+static bool provisioned = false;
+static bool friendship_established = false;
 
 static led_strip_handle_t led_strip;
 static esp_ble_mesh_msg_ctx_t ctx_for_gateway;
@@ -88,16 +93,16 @@ static esp_ble_mesh_cfg_srv_t config_server = {
     .relay = ESP_BLE_MESH_RELAY_DISABLED,
     .relay_retransmit = ESP_BLE_MESH_TRANSMIT(2, 20),
     .beacon = ESP_BLE_MESH_BEACON_ENABLED,
-#if defined(CONFIG_BLE_MESH_GATT_PROXY_SERVER)
-    .gatt_proxy = ESP_BLE_MESH_GATT_PROXY_ENABLED,
-#else
+//#if defined(CONFIG_BLE_MESH_GATT_PROXY_SERVER)
+//    .gatt_proxy = ESP_BLE_MESH_GATT_PROXY_ENABLED,
+//#else
     .gatt_proxy = ESP_BLE_MESH_GATT_PROXY_NOT_SUPPORTED,
-#endif
-#if defined(CONFIG_BLE_MESH_FRIEND)
-    .friend_state = ESP_BLE_MESH_FRIEND_ENABLED,
-#else
+//#endif
+//#if defined(CONFIG_BLE_MESH_FRIEND)
+//    .friend_state = ESP_BLE_MESH_FRIEND_ENABLED,
+//#else
     .friend_state = ESP_BLE_MESH_FRIEND_NOT_SUPPORTED,
-#endif
+//#endif
     .default_ttl = 7,
 };
 
@@ -243,7 +248,7 @@ static void ble_mesh_provisioning_cb(esp_ble_mesh_prov_cb_event_t event,
         ESP_LOGI(TAG_bt, "ESP_BLE_MESH_NODE_PROV_COMPLETE_EVT");
         prov_complete(param->node_prov_complete.net_idx, param->node_prov_complete.addr,
             param->node_prov_complete.flags, param->node_prov_complete.iv_index);
-        //bt_mesh_lpn_set(true, false);
+		
         break;
     case ESP_BLE_MESH_NODE_PROV_RESET_EVT:
         ESP_LOGI(TAG_bt, "ESP_BLE_MESH_NODE_PROV_RESET_EVT");
@@ -262,9 +267,12 @@ static void ble_mesh_provisioning_cb(esp_ble_mesh_prov_cb_event_t event,
         break;
     case ESP_BLE_MESH_LPN_FRIENDSHIP_ESTABLISH_EVT:
         ESP_LOGI(TAG_bt, "ESP_BLE_MESH_LPN_FRIENDSHIP_ESTABLISH_EVT");
+        friendship_established = true;
         break;
     case ESP_BLE_MESH_LPN_FRIENDSHIP_TERMINATE_EVT:
         ESP_LOGI(TAG_bt, "ESP_BLE_MESH_LPN_FRIENDSHIP_TERMINATE_EVT");
+        provisioned = true;
+        
         break;
     case ESP_BLE_MESH_FRIEND_FRIENDSHIP_ESTABLISH_EVT:
         ESP_LOGI(TAG_bt, "ESP_BLE_MESH_LPN_FRIENDSHIP_TERMINATE_EVT");
@@ -275,6 +283,7 @@ static void ble_mesh_provisioning_cb(esp_ble_mesh_prov_cb_event_t event,
     default:
         break;
     }
+    taskYIELD(); 
 }
 
 static void ble_mesh_config_server_cb(esp_ble_mesh_cfg_server_cb_event_t event,
@@ -300,9 +309,9 @@ static void ble_mesh_config_server_cb(esp_ble_mesh_cfg_server_cb_event_t event,
                 param->value.state_change.mod_app_bind.app_idx,
                 param->value.state_change.mod_app_bind.company_id,
                 param->value.state_change.mod_app_bind.model_id);
-                
-                client_connected = true;
-                
+            
+            provisioned = true;
+            
             break;
         case ESP_BLE_MESH_MODEL_OP_MODEL_SUB_ADD:
             ESP_LOGI(TAG_bt, "ESP_BLE_MESH_MODEL_OP_MODEL_SUB_ADD");
@@ -311,6 +320,9 @@ static void ble_mesh_config_server_cb(esp_ble_mesh_cfg_server_cb_event_t event,
                 param->value.state_change.mod_sub_add.sub_addr,
                 param->value.state_change.mod_sub_add.company_id,
                 param->value.state_change.mod_sub_add.model_id);
+            
+            
+            
             break;
         default:
             break;
@@ -825,9 +837,56 @@ void read_sensor_battery(void)
         ESP_LOGI(TAG_sensor, "battery[1]: %x", data_battery_level.data[1]);        
 }
 
+static esp_pm_lock_handle_t pm_lock;
+
+void sensor_task(void *arg)
+{
+    while (1) {
+        // 1. Acquire PM lock to prevent sleep
+        esp_pm_lock_acquire(pm_lock);
+
+		vTaskDelay(5000 / portTICK_PERIOD_MS);
+		
+        // 2. Power sensors ON
+        ds18b20_init();
+		adc_sensors_init();
+				
+		// 5. Read sensors and publish data
+		read_sensor_temperature();
+		read_sensor_moisture();
+		read_sensor_battery();
+ 		ESP_LOGI(TAG_main, "A");
+ 		
+        // 4. Trigger Friend Poll
+        bt_mesh_lpn_poll();
+
+        // 6. Power sensors OFF
+        adc_sensors_deinit();
+		ds18b20_deinit();
+		
+		vTaskDelay(5000 / portTICK_PERIOD_MS);
+		
+        // 7. Release PM lock
+        esp_pm_lock_release(pm_lock);
+
+        // 8. Sleep until next cycle
+        vTaskDelay(pdMS_TO_TICKS(20000)); // adjust poll interval
+    }
+}
+
 void app_main(void)
 {
     esp_err_t err;
+
+	ESP_LOGI(TAG_main, "Erasing...");
+
+
+    // Borra toda la NVS
+    // err = nvs_flash_erase();
+    // if (err != ESP_OK) {
+    //    printf("Error al borrar NVS: %s\n", esp_err_to_name(err));
+    //    return;
+    // }
 
     ESP_LOGI(TAG_main, "Initializing...");
 
@@ -837,17 +896,6 @@ void app_main(void)
         err = nvs_flash_init();
     }
     ESP_ERROR_CHECK(err);
-
-    // Configure dynamic frequency scaling:
-    // maximum and minimum frequencies are set in sdkconfig,
-    // automatic light sleep is enabled if tickless idle support is enabled.
-
-    esp_pm_config_t pm_config = {
-            .max_freq_mhz = 80,
-            .min_freq_mhz = MIN_CPU_FREQ_MHZ,
-            .light_sleep_enable = true
-    };
-    ESP_ERROR_CHECK( esp_pm_configure(&pm_config) );
 
     err = bluetooth_init();
     if (err) {
@@ -862,57 +910,101 @@ void app_main(void)
     if (err) {
         ESP_LOGE(TAG_main, "Bluetooth mesh init failed (err %d)", err);
     }
+
+    // Configure dynamic frequency scaling:
+    // maximum and minimum frequencies are set in sdkconfig,
+    // automatic light sleep is enabled if tickless idle support is enabled.
+
+    esp_pm_config_t pm_config = {
+            .max_freq_mhz = MAX_CPU_FREQ_MHZ,
+            .min_freq_mhz = MIN_CPU_FREQ_MHZ,
+            .light_sleep_enable = true
+    };
+    ESP_ERROR_CHECK( esp_pm_configure(&pm_config) );
 	
-	err = esp_bt_sleep_enable();
-	if (err) {
-        ESP_LOGE(TAG_main, "modem poer failed(err %d)", err);
-    }
+//	err = esp_bt_sleep_enable();
+//	if (err) {
+//        ESP_LOGE(TAG_main, "modem poer failed(err %d)", err);
+//    }
     
-	led_strip_config_t strip_config = {
-    	.strip_gpio_num = 8,
-    	.max_leds = 1, // at least one LED on board
-	};
- 	led_strip_rmt_config_t rmt_config = {
-    	.resolution_hz = 10 * 1000 * 1000, // 10MHz
-    	.flags.with_dma = false,
-	}; 
-	
+//	led_strip_config_t strip_config = {
+//    	.strip_gpio_num = 8,
+//    	.max_leds = 1, // at least one LED on board
+//	};
+// 	led_strip_rmt_config_t rmt_config = {
+//    	.resolution_hz = 10 * 1000 * 1000, // 10MHz
+//    	.flags.with_dma = false,
+//	}; 
+
 	while(1)
 	{
+		
+		if (provisioned == true){
+			vTaskDelay(5000 / portTICK_PERIOD_MS);
+			esp_err_t err = bt_mesh_lpn_set(true, false);
+			if (err == ESP_OK) {
+			    ESP_LOGI(TAG_main, "LPN mode enabled");
+			} else {
+			    ESP_LOGE(TAG_main, "Failed to enable LPN (%d)", err);
+			}
+			provisioned = false;
+		}
+		
+		if (friendship_established == true){			
+			xTaskCreatePinnedToCore(
+		    sensor_task,         // Task function
+		    "sensor_task",        	// Name (for debugging)
+		    4096,              // Stack size in words (≈16 KB)
+		    NULL,              // Task parameter
+		    5,                   // Priority
+		    NULL,             // Task handle (optional)
+		    tskNO_AFFINITY        	// Core affinity (ESP32-C3 is single-core)
+			);
+			friendship_established = false;
+		}
 		//init 1-wire
-		ds18b20_init();		
+		//ds18b20_init();		
 				
 		//init adc periph
-		adc_sensors_init();
+		//adc_sensors_init();
 		
 		//read temperature
-		read_sensor_temperature();
+		//read_sensor_temperature();
 
 		//read moisture
-		read_sensor_moisture();
+		//read_sensor_moisture();
 		
 		//read voltage
-		read_sensor_battery();
+		//read_sensor_battery();
 
 		//de init 1-wire
-		ds18b20_deinit();
+		//ds18b20_deinit();
 	
 		//de init adc periph
-		adc_sensors_deinit();
+		//adc_sensors_deinit();
 		
 		//turn off led
-		ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip));
-		led_strip_set_pixel(led_strip, 0, 255, 255, 255);
-        led_strip_refresh(led_strip);
+//		ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip));
+//		led_strip_set_pixel(led_strip, 0, 255, 255, 255);
+//        led_strip_refresh(led_strip);
         
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+//        vTaskDelay(1000 / portTICK_PERIOD_MS);
         
-		led_strip_clear(led_strip);
-		led_strip_del(led_strip);
-		gpio_reset_pin(8);	
-	
+//		led_strip_clear(led_strip);
+//		led_strip_del(led_strip);
+//		gpio_reset_pin(8);
+		//ESP_LOGI(TAG_main, "Z");
+		//vTaskDelay(1500 / portTICK_PERIOD_MS);	
+		//ESP_LOGI(TAG_main, "X");
+		//esp_sleep_enable_timer_wakeup(5000000);
+		//ESP_LOGI(TAG_main, "A");
+		//vTaskDelay(1500 / portTICK_PERIOD_MS);
+		//ESP_LOGI(TAG_main, "C");
+		//esp_light_sleep_start();
+		//ESP_LOGI(TAG_main, "D");
+
 		//sample delay
-		vTaskDelay(SAMPLE_DELAY / portTICK_PERIOD_MS);
+		vTaskDelay(20000 / portTICK_PERIOD_MS);
 	}
     
 }
