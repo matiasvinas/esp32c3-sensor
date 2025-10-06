@@ -10,6 +10,7 @@
 #include <inttypes.h>
 
 #include "esp_log.h"
+#include "esp_sleep.h"
 #include "host/ble_gap.h"
 #include "mesh/main.h"
 #include "nvs_flash.h"
@@ -28,6 +29,9 @@
 #include "esp_ble_mesh_sensor_model_api.h"
 #include "ble_mesh_example_init.h"
 
+#include "esp_ble_mesh_networking_api.h"
+
+
 // sensors and leds
 #include "ds18b20_custom.h"
 #include "adc_sensors.h"
@@ -37,8 +41,10 @@
 #define TAG_main "Main"
 #define TAG_sensor "Sensor"
 
-// delay time between each sensor reading
-#define SAMPLE_DELAY                30000
+// delay time between each sensor reading in miliseconds
+#define SENSOR_TASK_DELAY			30000
+#define SENSOR_MAIN_DELAY			30000
+
 
 #define CID_ESP     0x02E5
 
@@ -66,10 +72,11 @@ static float init_float_var = 0;
 static int8_t init_int_var = 0;
 static float s_temperature = 0.0;
 
-static bool client_connected = false;
+static bool provisioned = false;
+static bool friendship_established = false;
 
-static led_strip_handle_t led_strip;
 static esp_ble_mesh_msg_ctx_t ctx_for_gateway;
+static esp_pm_lock_handle_t pm_lock;
 
 void sensor_hum_readTask(void);
 void sensor_temp_readTask(void);
@@ -79,7 +86,7 @@ void sensor_battery_readTask(void);
 /* el 3° byte se usa para distinguir cada nodo de la malla */
 #define SENSOR_ID_MESH_0                    0x32    
 #define SENSOR_ID_MESH_1                    0x10
-#define SENSOR_ID_NODE      				0x03
+#define SENSOR_ID_NODE      				0x02
 static uint8_t dev_uuid[ESP_BLE_MESH_OCTET16_LEN] = { SENSOR_ID_MESH_0, SENSOR_ID_MESH_1, SENSOR_ID_NODE };
 
 static esp_ble_mesh_cfg_srv_t config_server = {
@@ -88,16 +95,16 @@ static esp_ble_mesh_cfg_srv_t config_server = {
     .relay = ESP_BLE_MESH_RELAY_DISABLED,
     .relay_retransmit = ESP_BLE_MESH_TRANSMIT(2, 20),
     .beacon = ESP_BLE_MESH_BEACON_ENABLED,
-#if defined(CONFIG_BLE_MESH_GATT_PROXY_SERVER)
-    .gatt_proxy = ESP_BLE_MESH_GATT_PROXY_ENABLED,
-#else
+//#if defined(CONFIG_BLE_MESH_GATT_PROXY_SERVER)
+//    .gatt_proxy = ESP_BLE_MESH_GATT_PROXY_ENABLED,
+//#else
     .gatt_proxy = ESP_BLE_MESH_GATT_PROXY_NOT_SUPPORTED,
-#endif
-#if defined(CONFIG_BLE_MESH_FRIEND)
-    .friend_state = ESP_BLE_MESH_FRIEND_ENABLED,
-#else
+//#endif
+//#if defined(CONFIG_BLE_MESH_FRIEND)
+//    .friend_state = ESP_BLE_MESH_FRIEND_ENABLED,
+//#else
     .friend_state = ESP_BLE_MESH_FRIEND_NOT_SUPPORTED,
-#endif
+//#endif
     .default_ttl = 7,
 };
 
@@ -210,6 +217,124 @@ static esp_ble_mesh_prov_t provision = {
     .uuid = dev_uuid,
 };
 
+void static enable_lpn_node(){
+	esp_err_t err = bt_mesh_lpn_set(true, false);
+	if (err == ESP_OK) {
+	    ESP_LOGI(TAG_main, "LPN mode enabled");
+	} else {
+	    ESP_LOGE(TAG_main, "Failed to enable LPN (%d)", err);
+	}
+}
+
+void read_sensor_temperature(void)
+{
+        uint8_t is_temp_below_zero = false;
+        
+        /* read data from sensor*/
+        s_temperature = ds18b20_read() * 100;
+        
+        /*check if is negative value*/
+        if(s_temperature < 0)
+        {
+			s_temperature = s_temperature * (-1);
+			is_temp_below_zero = true;
+		}
+		
+        ESP_LOGI(TAG_sensor, "temperature value: %f", s_temperature);
+        
+        /* Save data in memory for BLE Mesh */
+		net_buf_simple_reset(&data_temperature);
+        net_buf_simple_add_le16(&data_temperature, s_temperature);
+        net_buf_simple_add_u8(&data_temperature, is_temp_below_zero);
+        
+        ESP_LOGI(TAG_sensor, "temperature[0]: %x", data_temperature.data[0]);
+        ESP_LOGI(TAG_sensor, "temperature[1]: %x", data_temperature.data[1]);
+        ESP_LOGI(TAG_sensor, "temperature[2]: %x", data_temperature.data[2]);
+        ESP_LOGI(TAG_sensor, "temperature[3]: %x", data_temperature.data[3]);
+}
+
+void read_sensor_moisture(void)
+{				
+		/* read data from sensor */
+		float adc_moisture_reading = adc_yl69_read();
+		
+		ESP_LOGI(TAG_sensor, "moisture value: %f", adc_moisture_reading);
+		
+		/*preparing data to send*/
+		float s_moisture = adc_moisture_reading * 100;
+				
+		/* Save data in memory for BLE Mesh */
+		net_buf_simple_reset(&data_soil_moisture);
+        net_buf_simple_add_le16(&data_soil_moisture, s_moisture);
+        ESP_LOGI(TAG_sensor, "moisture[0]: %x", data_soil_moisture.data[0]);
+        ESP_LOGI(TAG_sensor, "moisture[1]: %x", data_soil_moisture.data[1]);        
+}
+
+void read_sensor_battery(void)
+{				
+		/* read data from sensor */
+		uint16_t adc_battery_level = adc_battery_read();
+		
+		ESP_LOGI(TAG_sensor, "Tension read from adc: %d", (int) adc_battery_level);
+		
+		float result = adc_battery_level * 3.2;
+		uint16_t bat_tension = (uint16_t) result;
+		
+		ESP_LOGI(TAG_sensor, "Battery tension: %d", (int) bat_tension);
+				
+		/* Save data in memory for BLE Mesh */
+		net_buf_simple_reset(&data_battery_level);
+        net_buf_simple_add_le16(&data_battery_level, bat_tension);
+        ESP_LOGI(TAG_sensor, "battery[0]: %x", data_battery_level.data[0]);
+        ESP_LOGI(TAG_sensor, "battery[1]: %x", data_battery_level.data[1]);        
+}
+
+void sensor_task(void *arg)
+{
+    while (1) {
+        // Acquire PM lock to prevent sleep
+        esp_pm_lock_acquire(pm_lock);
+
+		vTaskDelay(pdMS_TO_TICKS(2500));
+		
+        // Power sensors ON
+        ds18b20_init();
+		adc_sensors_init();
+				
+		// Read sensors and publish data
+		read_sensor_temperature();
+		read_sensor_moisture();
+		read_sensor_battery();
+ 		
+        // Trigger Friend Poll
+        bt_mesh_lpn_poll();
+
+        // Power sensors OFF
+        adc_sensors_deinit();
+		ds18b20_deinit();
+		
+		vTaskDelay(pdMS_TO_TICKS(2500));
+		
+        // Release PM lock
+        esp_pm_lock_release(pm_lock);
+
+        // Sleep until next cycle
+        vTaskDelay(pdMS_TO_TICKS(SENSOR_TASK_DELAY));
+    }
+}
+
+void static register_lpn_routine(){
+			xTaskCreatePinnedToCore(
+		    sensor_task,         // Task function
+		    "sensor_task",        	// Name (for debugging)
+		    4096,              // Stack size in words (≈16 KB)
+		    NULL,              // Task parameter
+		    5,                   // Priority
+		    NULL,             // Task handle (optional)
+		    tskNO_AFFINITY        	// Core affinity (ESP32-C3 is single-core)
+			);
+}
+
 static void prov_complete(uint16_t net_idx, uint16_t addr, uint8_t flags, uint32_t iv_index)
 {
     ESP_LOGI(TAG_bt, "net_idx 0x%03x, addr 0x%04x", net_idx, addr);
@@ -243,7 +368,7 @@ static void ble_mesh_provisioning_cb(esp_ble_mesh_prov_cb_event_t event,
         ESP_LOGI(TAG_bt, "ESP_BLE_MESH_NODE_PROV_COMPLETE_EVT");
         prov_complete(param->node_prov_complete.net_idx, param->node_prov_complete.addr,
             param->node_prov_complete.flags, param->node_prov_complete.iv_index);
-        //bt_mesh_lpn_set(true, false);
+		
         break;
     case ESP_BLE_MESH_NODE_PROV_RESET_EVT:
         ESP_LOGI(TAG_bt, "ESP_BLE_MESH_NODE_PROV_RESET_EVT");
@@ -262,9 +387,12 @@ static void ble_mesh_provisioning_cb(esp_ble_mesh_prov_cb_event_t event,
         break;
     case ESP_BLE_MESH_LPN_FRIENDSHIP_ESTABLISH_EVT:
         ESP_LOGI(TAG_bt, "ESP_BLE_MESH_LPN_FRIENDSHIP_ESTABLISH_EVT");
+        register_lpn_routine();
         break;
     case ESP_BLE_MESH_LPN_FRIENDSHIP_TERMINATE_EVT:
         ESP_LOGI(TAG_bt, "ESP_BLE_MESH_LPN_FRIENDSHIP_TERMINATE_EVT");
+        enable_lpn_node();
+        
         break;
     case ESP_BLE_MESH_FRIEND_FRIENDSHIP_ESTABLISH_EVT:
         ESP_LOGI(TAG_bt, "ESP_BLE_MESH_LPN_FRIENDSHIP_TERMINATE_EVT");
@@ -275,6 +403,7 @@ static void ble_mesh_provisioning_cb(esp_ble_mesh_prov_cb_event_t event,
     default:
         break;
     }
+    taskYIELD(); 
 }
 
 static void ble_mesh_config_server_cb(esp_ble_mesh_cfg_server_cb_event_t event,
@@ -300,9 +429,9 @@ static void ble_mesh_config_server_cb(esp_ble_mesh_cfg_server_cb_event_t event,
                 param->value.state_change.mod_app_bind.app_idx,
                 param->value.state_change.mod_app_bind.company_id,
                 param->value.state_change.mod_app_bind.model_id);
-                
-                client_connected = true;
-                
+            
+            enable_lpn_node();
+            
             break;
         case ESP_BLE_MESH_MODEL_OP_MODEL_SUB_ADD:
             ESP_LOGI(TAG_bt, "ESP_BLE_MESH_MODEL_OP_MODEL_SUB_ADD");
@@ -311,6 +440,9 @@ static void ble_mesh_config_server_cb(esp_ble_mesh_cfg_server_cb_event_t event,
                 param->value.state_change.mod_sub_add.sub_addr,
                 param->value.state_change.mod_sub_add.company_id,
                 param->value.state_change.mod_sub_add.model_id);
+            
+            
+            
             break;
         default:
             break;
@@ -767,67 +899,17 @@ static esp_err_t ble_mesh_init(void)
     return ESP_OK;
 }
 
-void read_sensor_temperature(void)
-{
-        uint8_t is_temp_below_zero = false;
-        
-        /* read data from sensor*/
-        s_temperature = ds18b20_read() * 100;
-        
-        /*check if is negative value*/
-        if(s_temperature < 0)
-        {
-			s_temperature = s_temperature * (-1);
-			is_temp_below_zero = true;
-		}
-		
-        ESP_LOGI(TAG_sensor, "temperature value: %f", s_temperature);
-        
-        /* Save data in memory for BLE Mesh */
-		net_buf_simple_reset(&data_temperature);
-        net_buf_simple_add_le16(&data_temperature, s_temperature);
-        net_buf_simple_add_u8(&data_temperature, is_temp_below_zero);
-        
-        ESP_LOGI(TAG_sensor, "temperature[0]: %x", data_temperature.data[0]);
-        ESP_LOGI(TAG_sensor, "temperature[1]: %x", data_temperature.data[1]);
-        ESP_LOGI(TAG_sensor, "temperature[2]: %x", data_temperature.data[2]);
-        ESP_LOGI(TAG_sensor, "temperature[3]: %x", data_temperature.data[3]);
-}
-
-void read_sensor_moisture(void)
-{				
-		/* read data from sensor */
-		float adc_moisture_reading = adc_yl69_read();
-		
-		ESP_LOGI(TAG_sensor, "moisture value: %f", adc_moisture_reading);
-		
-		/*preparing data to send*/
-		float s_moisture = adc_moisture_reading * 100;
-				
-		/* Save data in memory for BLE Mesh */
-		net_buf_simple_reset(&data_soil_moisture);
-        net_buf_simple_add_le16(&data_soil_moisture, s_moisture);
-        ESP_LOGI(TAG_sensor, "moisture[0]: %x", data_soil_moisture.data[0]);
-        ESP_LOGI(TAG_sensor, "moisture[1]: %x", data_soil_moisture.data[1]);        
-}
-
-void read_sensor_battery(void)
-{				
-		/* read data from sensor */
-		uint16_t adc_battery_level = adc_battery_read();
-		
-		ESP_LOGI(TAG_sensor, "battery value: %d", (int) adc_battery_level);
-				
-		/* Save data in memory for BLE Mesh */
-		net_buf_simple_reset(&data_battery_level);
-        net_buf_simple_add_le16(&data_battery_level, adc_battery_level);
-        ESP_LOGI(TAG_sensor, "battery[0]: %x", data_battery_level.data[0]);
-        ESP_LOGI(TAG_sensor, "battery[1]: %x", data_battery_level.data[1]);        
-}
-
 void app_main(void)
 {
     esp_err_t err;
+
+	ESP_LOGI(TAG_main, "Erasing...");
+    //Borra toda la NVS
+    err = nvs_flash_erase();
+    if (err != ESP_OK) {
+		ESP_LOGE(TAG_main, "Error erasing NVS: %d", err);
+      return;
+    }
 
     ESP_LOGI(TAG_main, "Initializing...");
 
@@ -837,17 +919,6 @@ void app_main(void)
         err = nvs_flash_init();
     }
     ESP_ERROR_CHECK(err);
-
-    // Configure dynamic frequency scaling:
-    // maximum and minimum frequencies are set in sdkconfig,
-    // automatic light sleep is enabled if tickless idle support is enabled.
-
-    esp_pm_config_t pm_config = {
-            .max_freq_mhz = 80,
-            .min_freq_mhz = MIN_CPU_FREQ_MHZ,
-            .light_sleep_enable = true
-    };
-    ESP_ERROR_CHECK( esp_pm_configure(&pm_config) );
 
     err = bluetooth_init();
     if (err) {
@@ -862,57 +933,15 @@ void app_main(void)
     if (err) {
         ESP_LOGE(TAG_main, "Bluetooth mesh init failed (err %d)", err);
     }
-	
-	err = esp_bt_sleep_enable();
-	if (err) {
-        ESP_LOGE(TAG_main, "modem poer failed(err %d)", err);
-    }
-    
-	led_strip_config_t strip_config = {
-    	.strip_gpio_num = 8,
-    	.max_leds = 1, // at least one LED on board
-	};
- 	led_strip_rmt_config_t rmt_config = {
-    	.resolution_hz = 10 * 1000 * 1000, // 10MHz
-    	.flags.with_dma = false,
-	}; 
-	
-	while(1)
-	{
-		//init 1-wire
-		ds18b20_init();		
-				
-		//init adc periph
-		adc_sensors_init();
-		
-		//read temperature
-		read_sensor_temperature();
 
-		//read moisture
-		read_sensor_moisture();
-		
-		//read voltage
-		read_sensor_battery();
+    // Configure dynamic frequency scaling:
+    // maximum and minimum frequencies are set in sdkconfig,
+    // automatic light sleep is enabled if tickless idle support is enabled.
 
-		//de init 1-wire
-		ds18b20_deinit();
-	
-		//de init adc periph
-		adc_sensors_deinit();
-		
-		//turn off led
-		ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip));
-		led_strip_set_pixel(led_strip, 0, 255, 255, 255);
-        led_strip_refresh(led_strip);
-        
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-        
-		led_strip_clear(led_strip);
-		led_strip_del(led_strip);
-		gpio_reset_pin(8);	
-	
-		//sample delay
-		vTaskDelay(SAMPLE_DELAY / portTICK_PERIOD_MS);
-	}
-    
+    esp_pm_config_t pm_config = {
+            .max_freq_mhz = MAX_CPU_FREQ_MHZ,
+            .min_freq_mhz = MIN_CPU_FREQ_MHZ,
+            .light_sleep_enable = true
+    };
+    ESP_ERROR_CHECK( esp_pm_configure(&pm_config) );
 }
