@@ -86,7 +86,7 @@ void sensor_battery_readTask(void);
 /* el 3° byte se usa para distinguir cada nodo de la malla */
 #define SENSOR_ID_MESH_0                    0x32    
 #define SENSOR_ID_MESH_1                    0x10
-#define SENSOR_ID_NODE      				0x02
+#define SENSOR_ID_NODE      				0x03
 static uint8_t dev_uuid[ESP_BLE_MESH_OCTET16_LEN] = { SENSOR_ID_MESH_0, SENSOR_ID_MESH_1, SENSOR_ID_NODE };
 
 static esp_ble_mesh_cfg_srv_t config_server = {
