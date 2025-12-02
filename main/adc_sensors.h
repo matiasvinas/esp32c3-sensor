@@ -37,5 +37,4 @@ void adc_sensors_deinit(void);
 uint32_t adc_battery_read(void);
 float adc_yl69_read();
 
-//uint32_t adc_yl69_normalization(uint32_t value_t);
 #endif /* MAIN_ADC_SENSORS_H_ */

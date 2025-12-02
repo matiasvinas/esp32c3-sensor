@@ -27,7 +27,6 @@
 #define VALUE_MAX 4095 // Max ADV value of soil mosture
 
 void yl69_init(adc_channel_t _channel);
-//uint32_t yl69_read();
 uint32_t yl69_normalization(uint32_t value_t);
 
 #endif /* MAIN_YL69_H_ */
