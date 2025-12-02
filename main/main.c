@@ -69,8 +69,9 @@
 #define SENSOR_UPDATE_INTERVAL      ESP_BLE_MESH_SENSOR_NOT_APPL_UPDATE_INTERVAL
 
 static float init_float_var = 0;
-static int8_t init_int_var = 0;
+static uint8_t init_int_var = 0;
 static float s_temperature = 0.0;
+static uint8_t delay_sensor_routine = 1;
 
 static bool provisioned = false;
 static bool friendship_established = false;
@@ -112,6 +113,25 @@ NET_BUF_SIMPLE_DEFINE_STATIC(data_temperature, 24);
 NET_BUF_SIMPLE_DEFINE_STATIC(data_soil_moisture, 16);
 NET_BUF_SIMPLE_DEFINE_STATIC(data_battery_level, 16);
 
+
+
+NET_BUF_SIMPLE_DEFINE_STATIC(delta_down, 24);
+NET_BUF_SIMPLE_DEFINE_STATIC(delta_up, 24);
+NET_BUF_SIMPLE_DEFINE_STATIC(low, 24);
+NET_BUF_SIMPLE_DEFINE_STATIC(high, 24);
+
+static esp_ble_mesh_sensor_cadence_t sensor_cadence = {
+    .period_divisor = 0, 				/* set as needed */
+    .trigger_type = 0,					/* set as needed */
+    .trigger_delta_down = &delta_down, 	/* pointer to net_buf_simple, properly initialized */
+    .trigger_delta_up = &delta_up,		/* pointer to net_buf_simple, properly initialized */
+    .min_interval = 1,					/* set as needed */
+    .fast_cadence_low = &low, 			/* pointer to net_buf_simple, properly initialized */
+    .fast_cadence_high = &high, 		/* pointer to net_buf_simple, properly initialized */
+};
+
+
+
 static esp_ble_mesh_sensor_state_t sensor_states[3] = {
     /* Mesh Model Spec:
      * Multiple instances of the Sensor states may be present within the same model,
@@ -143,6 +163,7 @@ static esp_ble_mesh_sensor_state_t sensor_states[3] = {
             .length = 2, /* 0 represents the length is 1 */
             .raw_value = &data_temperature,
         },
+        .cadence = &sensor_cadence,
     },
     [1] = {
         .sensor_property_id = SENSOR_PROPERTY_ID_1,
@@ -292,34 +313,36 @@ void read_sensor_battery(void)
 void sensor_task(void *arg)
 {
     while (1) {
+		    ESP_LOGI(TAG_main, "Initializing sensor task");
         // Acquire PM lock to prevent sleep
         esp_pm_lock_acquire(pm_lock);
 
-		vTaskDelay(pdMS_TO_TICKS(2500));
+		    vTaskDelay(pdMS_TO_TICKS(2500));
 		
         // Power sensors ON
         ds18b20_init();
-		adc_sensors_init();
+		    adc_sensors_init();
 				
-		// Read sensors and publish data
-		read_sensor_temperature();
-		read_sensor_moisture();
-		read_sensor_battery();
+		    // Read sensors and publish data
+		    read_sensor_temperature();
+		    read_sensor_moisture();
+		    read_sensor_battery();
  		
         // Trigger Friend Poll
         bt_mesh_lpn_poll();
 
         // Power sensors OFF
         adc_sensors_deinit();
-		ds18b20_deinit();
+		    ds18b20_deinit();
 		
-		vTaskDelay(pdMS_TO_TICKS(2500));
+		    vTaskDelay(pdMS_TO_TICKS(2500));
 		
         // Release PM lock
         esp_pm_lock_release(pm_lock);
-
+        
         // Sleep until next cycle
-        vTaskDelay(pdMS_TO_TICKS(SENSOR_TASK_DELAY));
+		    ESP_LOGI(TAG_main, "going to sleep for %i minutes", delay_sensor_routine);
+        vTaskDelay(pdMS_TO_TICKS(delay_sensor_routine * 60 * 1000));
     }
 }
 
@@ -429,8 +452,7 @@ static void ble_mesh_config_server_cb(esp_ble_mesh_cfg_server_cb_event_t event,
                 param->value.state_change.mod_app_bind.app_idx,
                 param->value.state_change.mod_app_bind.company_id,
                 param->value.state_change.mod_app_bind.model_id);
-            
-            enable_lpn_node();
+            //enable_lpn_node();
             
             break;
         case ESP_BLE_MESH_MODEL_OP_MODEL_SUB_ADD:
@@ -440,7 +462,7 @@ static void ble_mesh_config_server_cb(esp_ble_mesh_cfg_server_cb_event_t event,
                 param->value.state_change.mod_sub_add.sub_addr,
                 param->value.state_change.mod_sub_add.company_id,
                 param->value.state_change.mod_sub_add.model_id);
-            
+            enable_lpn_node();
             
             
             break;
@@ -817,7 +839,7 @@ static void ble_mesh_sensor_server_cb(esp_ble_mesh_sensor_server_cb_event_t even
             break;
         case ESP_BLE_MESH_MODEL_OP_SENSOR_CADENCE_GET:
             ESP_LOGI(TAG_bt, "ESP_BLE_MESH_MODEL_OP_SENSOR_CADENCE_GET");
-            ble_mesh_send_sensor_cadence_status(param);
+            //ble_mesh_send_sensor_cadence_status(param);
             break;
         case ESP_BLE_MESH_MODEL_OP_SENSOR_SETTINGS_GET:
             ESP_LOGI(TAG_bt, "ESP_BLE_MESH_MODEL_OP_SENSOR_SETTINGS_GET");
@@ -851,7 +873,18 @@ static void ble_mesh_sensor_server_cb(esp_ble_mesh_sensor_server_cb_event_t even
         switch (param->ctx.recv_op) {
         case ESP_BLE_MESH_MODEL_OP_SENSOR_CADENCE_SET:
             ESP_LOGI(TAG_bt, "ESP_BLE_MESH_MODEL_OP_SENSOR_CADENCE_SET");
-            ble_mesh_send_sensor_cadence_status(param);
+         
+            ESP_LOG_BUFFER_HEX("Cadence Data", param->value.set.sensor_cadence.cadence->data,
+                    param->value.set.sensor_cadence.cadence->len);
+              
+            // Process and store cadence data
+            uint8_t * data = param->value.set.sensor_cadence.cadence->data;
+		    uint8_t cadence = data[5];
+		    
+		    delay_sensor_routine = cadence;
+		    
+		    ESP_LOGI(TAG_bt, "value obtained: %i minutes", delay_sensor_routine );
+		    
             break;
         case ESP_BLE_MESH_MODEL_OP_SENSOR_CADENCE_SET_UNACK:
             ESP_LOGI(TAG_bt, "ESP_BLE_MESH_MODEL_OP_SENSOR_CADENCE_SET_UNACK");
@@ -920,6 +953,12 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(err);
 
+    //candece config purposes
+	  net_buf_simple_add_le16(&delta_up, 0);
+	  net_buf_simple_add_le16(&low, 0);
+	  net_buf_simple_add_le16(&high, 0);
+	  net_buf_simple_add_le16(&delta_down, 0);
+
     err = bluetooth_init();
     if (err) {
         ESP_LOGE(TAG_main, "esp32_bluetooth_init failed (err %d)", err);
@@ -944,4 +983,6 @@ void app_main(void)
             .light_sleep_enable = true
     };
     ESP_ERROR_CHECK( esp_pm_configure(&pm_config) );
+    
+
 }
