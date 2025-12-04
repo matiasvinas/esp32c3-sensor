@@ -31,6 +31,7 @@
 
 #include "ds18b20_custom.h"
 #include "adc_sensors.h"
+#include "yl69.h"
 
 #define TAG_bt "Bluetooth"
 #define TAG_main "Main"
@@ -265,7 +266,13 @@ void read_sensor_temperature(void)
         ESP_LOGI(TAG_sensor, "temperature[2]: %x", data_temperature.data[2]);
         ESP_LOGI(TAG_sensor, "temperature[3]: %x", data_temperature.data[3]);
 }
+/*---*/
+static adc_oneshot_unit_handle_t adc1_handle;
 
+static adc_oneshot_unit_init_cfg_t init_config1 = {
+    .unit_id = ADC_UNIT_1,
+};
+/*---*/
 /* Reads soil moisture from YL-69 and stores the result in a BLE Mesh buffer
  *
  */
@@ -273,7 +280,9 @@ void read_sensor_temperature(void)
 void read_sensor_moisture(void)
 {				
 		/* read data from sensor */
-		float adc_moisture_reading = adc_yl69_read();
+		/*---*/
+		float adc_moisture_reading = moisture_read(adc1_handle);
+		/*---*/
 		
 		ESP_LOGI(TAG_sensor, "moisture value: %f", adc_moisture_reading);
 		
@@ -294,8 +303,9 @@ void read_sensor_moisture(void)
 void read_sensor_battery(void)
 {				
 		/* read data from sensor */
-		uint16_t adc_battery_level = adc_battery_read();
-		
+		/*---*/
+		uint16_t adc_battery_level = battery_read(adc1_handle);
+		/*---*/
 		ESP_LOGI(TAG_sensor, "Tension read from adc: %d", (int) adc_battery_level);
 		
 		float result = adc_battery_level * 3.2;
@@ -314,6 +324,8 @@ void read_sensor_battery(void)
  * via BLE Mesh, triggers Friend Poll, powers sensors OFF, and then sleeps for a config delay
  */
 
+
+
 void sensor_task(void *arg)
 {
     while (1) {
@@ -325,7 +337,16 @@ void sensor_task(void *arg)
 		
         // Power sensors ON
         ds18b20_init();
-		adc_sensors_init();
+        
+        /*---*/
+        //-------------New Unit for ADC1---------------//
+    	ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config1, &adc1_handle));
+    	
+    	battery_init(adc1_handle);
+    	moisture_init(adc1_handle);
+        /*---*/
+        
+		
 				
 		// Read sensors and publish data
 		read_sensor_temperature();
@@ -336,7 +357,12 @@ void sensor_task(void *arg)
         bt_mesh_lpn_poll();
 
         // Power sensors OFF
-        adc_sensors_deinit();
+        /*---*/
+        ESP_ERROR_CHECK(adc_oneshot_del_unit(adc1_handle));
+        battery_deinit();
+        moisture_deinit();
+        /*---*/
+        
 		ds18b20_deinit();
 		
 		vTaskDelay(pdMS_TO_TICKS(2500));

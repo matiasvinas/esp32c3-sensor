@@ -6,13 +6,12 @@
 
 
 const static char *TAG_adc_battery = "ADC for Battery sensor";
-const static char *TAG_adc_moisture = "ADC for Moisture sensor";
 
-static adc_oneshot_unit_handle_t adc1_handle;
+//static adc_oneshot_unit_handle_t adc1_handle;
 
-static adc_oneshot_unit_init_cfg_t init_config1 = {
-    .unit_id = ADC_UNIT_1,
-};
+//static adc_oneshot_unit_init_cfg_t init_config1 = {
+//    .unit_id = ADC_UNIT_1,
+//};
 
 static adc_oneshot_chan_cfg_t config = {
     .bitwidth = ADC_BITWIDTH_DEFAULT,
@@ -20,12 +19,8 @@ static adc_oneshot_chan_cfg_t config = {
 };
 
 static adc_cali_handle_t adc1_cali_chan3_handle = NULL;
-static adc_cali_handle_t adc1_cali_chan4_handle = NULL;
 
-/*---------------------------------------------------------------
-        ADC Calibration
----------------------------------------------------------------*/
-bool adc_calibration_init(adc_unit_t unit, adc_channel_t channel, adc_atten_t atten, adc_cali_handle_t *out_handle)
+bool battery_calibration_init(adc_unit_t unit, adc_channel_t channel, adc_atten_t atten, adc_cali_handle_t *out_handle)
 {
     adc_cali_handle_t handle = NULL;
     esp_err_t ret = ESP_FAIL;
@@ -74,7 +69,7 @@ bool adc_calibration_init(adc_unit_t unit, adc_channel_t channel, adc_atten_t at
     return calibrated;
 }
 
-void adc_calibration_deinit(adc_cali_handle_t handle)
+void battery_calibration_deinit(adc_cali_handle_t handle)
 {
 #if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
     ESP_LOGI(TAG_adc_battery, "deregister %s calibration scheme", "Curve Fitting");
@@ -86,28 +81,23 @@ void adc_calibration_deinit(adc_cali_handle_t handle)
 #endif
 }
 
-void adc_sensors_init(void)
+void battery_init(adc_oneshot_unit_handle_t adc1_handle)
 {
-	//-------------New Unit for ADC1---------------//
-    ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config1, &adc1_handle));
-
 	//-------------ADC1 Config---------------//
     ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL_BATTERY, &config));
-    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL_YL69, &config));
+    //ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL_YL69, &config));
 
     //-------------ADC1 Calibration Init---------------//
-    adc_calibration_init(ADC_UNIT_1, ADC_CHANNEL_BATTERY, EXAMPLE_ADC_ATTEN, &adc1_cali_chan3_handle);
-	adc_calibration_init(ADC_UNIT_1, ADC_CHANNEL_YL69, EXAMPLE_ADC_ATTEN, &adc1_cali_chan4_handle);
+    battery_calibration_init(ADC_UNIT_1, ADC_CHANNEL_BATTERY, EXAMPLE_ADC_ATTEN, &adc1_cali_chan3_handle);
+	//adc_calibration_init(ADC_UNIT_1, ADC_CHANNEL_YL69, EXAMPLE_ADC_ATTEN, &adc1_cali_chan4_handle);
 }
 
-void adc_sensors_deinit(void)
+void battery_deinit()
 {
-	ESP_ERROR_CHECK(adc_oneshot_del_unit(adc1_handle));
-	adc_calibration_deinit(adc1_cali_chan3_handle);
-	adc_calibration_deinit(adc1_cali_chan4_handle);
+	battery_calibration_deinit(adc1_cali_chan3_handle);
 }
 
-uint32_t adc_battery_read(void)
+uint32_t battery_read(adc_oneshot_unit_handle_t adc1_handle)
 {
 	int adc_one_shot = 0;
 	int voltage = 0;
@@ -125,36 +115,7 @@ uint32_t adc_battery_read(void)
 	ESP_ERROR_CHECK(adc_cali_raw_to_voltage(adc1_cali_chan3_handle, adc_value, &voltage));
     ESP_LOGI(TAG_adc_battery, "ADC%d Channel[%d] Battery Voltage: %d mV", ADC_UNIT_1 + 1, ADC_CHANNEL_BATTERY, voltage);
     
-    
-    
     return voltage;
 }
 
-float adc_yl69_read()
-{
-	int adc_one_shot = 0;
-	int adc_value = 0;
-	float moisture = 0;
-	
-	//Multisampling
-	for (int i = 0; i < NO_OF_SAMPLES; i++) {
-		ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle, ADC_CHANNEL_YL69, &adc_one_shot));
-		adc_value += adc_one_shot;
-	}
-	adc_value /= NO_OF_SAMPLES;	
-	
-	//Obtain voltage and convert to V
-	int voltage_mv = 0;
-	ESP_ERROR_CHECK(adc_cali_raw_to_voltage(adc1_cali_chan4_handle, adc_value, &voltage_mv));
-	ESP_LOGI(TAG_adc_moisture, "ADC%d Channel[%d] Voltage: %d mV", ADC_UNIT_1 + 1, ADC_CHANNEL_YL69, voltage_mv);
-	
-	//Calculate moisture
-	float voltage = ( (float) voltage_mv ) * 0.001;
-	moisture = -27.654*pow(voltage,3) + 177.63*pow(voltage,2) - 388.04*voltage + 308.98; 
-	moisture = roundf(moisture * 100) * 0.01;
-	if(moisture > 100) {moisture = 99.99; };
-	if(moisture < 0) {moisture = 0; };
-	ESP_LOGI(TAG_adc_moisture, "ADC%d Channel[%d] Moisture: %.2f ", ADC_UNIT_1 + 1, ADC_CHANNEL_YL69, moisture);
-	
-    return  moisture;
-}
+
