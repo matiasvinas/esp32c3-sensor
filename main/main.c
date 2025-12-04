@@ -13,6 +13,8 @@
 #include "esp_sleep.h"
 #include "host/ble_gap.h"
 #include "mesh/main.h"
+
+#include "battery.h"
 #include "nvs_flash.h"
 #include "driver/gpio.h"
 
@@ -29,9 +31,8 @@
 
 #include "esp_ble_mesh_networking_api.h"
 
-#include "ds18b20_custom.h"
-#include "adc_sensors.h"
-#include "yl69.h"
+#include "moisture.h"
+#include "temperature.h"
 
 #define TAG_bt "Bluetooth"
 #define TAG_main "Main"

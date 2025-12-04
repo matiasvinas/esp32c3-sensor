@@ -5,8 +5,8 @@
  *      Author: matia
  */
 
-#ifndef MAIN_ADC_SENSORS_H_
-#define MAIN_ADC_SENSORS_H_
+#ifndef MAIN_BATTERY_H_
+#define MAIN_BATTERY_H_
 
 #include <stdio.h>
 #include <math.h>
@@ -35,4 +35,4 @@ void battery_deinit();
 
 uint32_t battery_read(adc_oneshot_unit_handle_t adc1_handle);
 
-#endif /* MAIN_ADC_SENSORS_H_ */
+#endif /* MAIN_BATTERY_H_ */

@@ -2,8 +2,8 @@
  * ESP32 Soil Moisture Sensor YL-69 or HL-69 Driver
  */
 
-#ifndef MAIN_YL69_H_
-#define MAIN_YL69_H_
+#ifndef MAIN_MOISTURE_H_
+#define MAIN_MOISTURE_H_
 
 //#include "driver/adc.h"
 //#include "driver/gpio.h"
@@ -37,4 +37,4 @@ float moisture_read(adc_oneshot_unit_handle_t adc1_handle);
 
 uint32_t moisture_normalization(uint32_t value_t);
 
-#endif /* MAIN_YL69_H_ */
+#endif /* MAIN_MOISTURE_H_ */

@@ -2,7 +2,7 @@
  * ESP32 Soil Moisture Sensor YL-69 or HL-69 Driver
  */
 
-#include "yl69.h"
+#include "moisture.h"
 
 
 const static char *ADC_TAG = "ADC_YL69";

@@ -2,7 +2,7 @@
  * ESP32 Battery Level Sensor  Driver
  */
 
-#include "adc_sensors.h"
+#include "battery.h"
 
 
 const static char *TAG_adc_battery = "ADC for Battery sensor";
