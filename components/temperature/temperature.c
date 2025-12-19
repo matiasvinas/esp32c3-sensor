@@ -3,7 +3,7 @@
  * using esp managed component ds18b20
  */
 
-#include "ds18b20_custom.h"
+#include "temperature.h"
 
 static int s_ds18b20_device_num = 0;
 static ds18b20_device_handle_t s_ds18b20s[ONEWIRE_MAX_DS18B20];

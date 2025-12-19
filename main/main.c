@@ -13,14 +13,14 @@
 #include "esp_sleep.h"
 #include "host/ble_gap.h"
 #include "mesh/main.h"
+
+#include "battery.h"
 #include "nvs_flash.h"
 #include "driver/gpio.h"
 
-// power management libs
 #include "esp_pm.h"
 #include "esp_bt.h"
 
-// ble mesh libs
 #include "esp_ble_mesh_defs.h"
 #include "esp_ble_mesh_common_api.h"
 #include "esp_ble_mesh_networking_api.h"
@@ -31,20 +31,12 @@
 
 #include "esp_ble_mesh_networking_api.h"
 
-
-// sensors and leds
-#include "ds18b20_custom.h"
-#include "adc_sensors.h"
-#include "led_strip.h"
+#include "moisture.h"
+#include "temperature.h"
 
 #define TAG_bt "Bluetooth"
 #define TAG_main "Main"
 #define TAG_sensor "Sensor"
-
-// delay time between each sensor reading in miliseconds
-#define SENSOR_TASK_DELAY			30000
-#define SENSOR_MAIN_DELAY			30000
-
 
 #define CID_ESP     0x02E5
 
@@ -68,6 +60,14 @@
 #define SENSOR_MEASURE_PERIOD       ESP_BLE_MESH_SENSOR_NOT_APPL_MEASURE_PERIOD
 #define SENSOR_UPDATE_INTERVAL      ESP_BLE_MESH_SENSOR_NOT_APPL_UPDATE_INTERVAL
 
+// ID BLE MESH Bytes
+// the first 2 bytes are used to identify all nodes in the mesh
+// the 3rd byte is used to distinguish each node in the mesh
+#define SENSOR_ID_MESH_0                    0x32    
+#define SENSOR_ID_MESH_1                    0x10
+#define SENSOR_ID_NODE      				0x03
+
+
 static float init_float_var = 0;
 static uint8_t init_int_var = 0;
 static float s_temperature = 0.0;
@@ -83,11 +83,6 @@ void sensor_hum_readTask(void);
 void sensor_temp_readTask(void);
 void sensor_battery_readTask(void);
 
-/* los primeros 2 bytes se usan para identificar a todos los nodos de la malla*/
-/* el 3° byte se usa para distinguir cada nodo de la malla */
-#define SENSOR_ID_MESH_0                    0x32    
-#define SENSOR_ID_MESH_1                    0x10
-#define SENSOR_ID_NODE      				0x03
 static uint8_t dev_uuid[ESP_BLE_MESH_OCTET16_LEN] = { SENSOR_ID_MESH_0, SENSOR_ID_MESH_1, SENSOR_ID_NODE };
 
 static esp_ble_mesh_cfg_srv_t config_server = {
@@ -96,24 +91,22 @@ static esp_ble_mesh_cfg_srv_t config_server = {
     .relay = ESP_BLE_MESH_RELAY_DISABLED,
     .relay_retransmit = ESP_BLE_MESH_TRANSMIT(2, 20),
     .beacon = ESP_BLE_MESH_BEACON_ENABLED,
-//#if defined(CONFIG_BLE_MESH_GATT_PROXY_SERVER)
-//    .gatt_proxy = ESP_BLE_MESH_GATT_PROXY_ENABLED,
-//#else
+#if defined(CONFIG_BLE_MESH_GATT_PROXY_SERVER)
+    .gatt_proxy = ESP_BLE_MESH_GATT_PROXY_ENABLED,
+#else
     .gatt_proxy = ESP_BLE_MESH_GATT_PROXY_NOT_SUPPORTED,
-//#endif
-//#if defined(CONFIG_BLE_MESH_FRIEND)
-//    .friend_state = ESP_BLE_MESH_FRIEND_ENABLED,
-//#else
+#endif
+#if defined(CONFIG_BLE_MESH_FRIEND)
+    .friend_state = ESP_BLE_MESH_FRIEND_ENABLED,
+#else
     .friend_state = ESP_BLE_MESH_FRIEND_NOT_SUPPORTED,
-//#endif
+#endif
     .default_ttl = 7,
 };
 
 NET_BUF_SIMPLE_DEFINE_STATIC(data_temperature, 24);
 NET_BUF_SIMPLE_DEFINE_STATIC(data_soil_moisture, 16);
 NET_BUF_SIMPLE_DEFINE_STATIC(data_battery_level, 16);
-
-
 
 NET_BUF_SIMPLE_DEFINE_STATIC(delta_down, 24);
 NET_BUF_SIMPLE_DEFINE_STATIC(delta_up, 24);
@@ -129,8 +122,6 @@ static esp_ble_mesh_sensor_cadence_t sensor_cadence = {
     .fast_cadence_low = &low, 			/* pointer to net_buf_simple, properly initialized */
     .fast_cadence_high = &high, 		/* pointer to net_buf_simple, properly initialized */
 };
-
-
 
 static esp_ble_mesh_sensor_state_t sensor_states[3] = {
     /* Mesh Model Spec:
@@ -197,7 +188,6 @@ static esp_ble_mesh_sensor_state_t sensor_states[3] = {
     }
 };
 
-/* 20 octets is large enough to hold two Sensor Descriptor state values. */
 ESP_BLE_MESH_MODEL_PUB_DEFINE(sensor_pub, 30, ROLE_NODE);
 static esp_ble_mesh_sensor_srv_t sensor_server = {
     .rsp_ctrl = {
@@ -247,6 +237,10 @@ void static enable_lpn_node(){
 	}
 }
 
+/* Reads temperature from DS18B20 and stores the result in a BLE Mesh buffer
+ *
+ */
+ 
 void read_sensor_temperature(void)
 {
         uint8_t is_temp_below_zero = false;
@@ -273,11 +267,23 @@ void read_sensor_temperature(void)
         ESP_LOGI(TAG_sensor, "temperature[2]: %x", data_temperature.data[2]);
         ESP_LOGI(TAG_sensor, "temperature[3]: %x", data_temperature.data[3]);
 }
+/*---*/
+static adc_oneshot_unit_handle_t adc1_handle;
+
+static adc_oneshot_unit_init_cfg_t init_config1 = {
+    .unit_id = ADC_UNIT_1,
+};
+/*---*/
+/* Reads soil moisture from YL-69 and stores the result in a BLE Mesh buffer
+ *
+ */
 
 void read_sensor_moisture(void)
 {				
 		/* read data from sensor */
-		float adc_moisture_reading = adc_yl69_read();
+		/*---*/
+		float adc_moisture_reading = moisture_read(adc1_handle);
+		/*---*/
 		
 		ESP_LOGI(TAG_sensor, "moisture value: %f", adc_moisture_reading);
 		
@@ -291,11 +297,16 @@ void read_sensor_moisture(void)
         ESP_LOGI(TAG_sensor, "moisture[1]: %x", data_soil_moisture.data[1]);        
 }
 
+/* Reads battery tension and stores the result in a BLE Mesh buffer
+ *
+ */
+ 
 void read_sensor_battery(void)
 {				
 		/* read data from sensor */
-		uint16_t adc_battery_level = adc_battery_read();
-		
+		/*---*/
+		uint16_t adc_battery_level = battery_read(adc1_handle);
+		/*---*/
 		ESP_LOGI(TAG_sensor, "Tension read from adc: %d", (int) adc_battery_level);
 		
 		float result = adc_battery_level * 3.2;
@@ -310,6 +321,12 @@ void read_sensor_battery(void)
         ESP_LOGI(TAG_sensor, "battery[1]: %x", data_battery_level.data[1]);        
 }
 
+/* Task routine that periodically powers sensors ON, reads sensor data and publishes results
+ * via BLE Mesh, triggers Friend Poll, powers sensors OFF, and then sleeps for a config delay
+ */
+
+
+
 void sensor_task(void *arg)
 {
     while (1) {
@@ -321,7 +338,16 @@ void sensor_task(void *arg)
 		
         // Power sensors ON
         ds18b20_init();
-		    adc_sensors_init();
+        
+        /*---*/
+        //-------------New Unit for ADC1---------------//
+    	ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config1, &adc1_handle));
+    	
+    	battery_init(adc1_handle);
+    	moisture_init(adc1_handle);
+        /*---*/
+        
+		
 				
 		    // Read sensors and publish data
 		    read_sensor_temperature();
@@ -332,8 +358,13 @@ void sensor_task(void *arg)
         bt_mesh_lpn_poll();
 
         // Power sensors OFF
-        adc_sensors_deinit();
-		    ds18b20_deinit();
+        /*---*/
+        ESP_ERROR_CHECK(adc_oneshot_del_unit(adc1_handle));
+        battery_deinit();
+        moisture_deinit();
+        /*---*/
+        
+		ds18b20_deinit();
 		
 		    vTaskDelay(pdMS_TO_TICKS(2500));
 		
@@ -345,6 +376,9 @@ void sensor_task(void *arg)
         vTaskDelay(pdMS_TO_TICKS(delay_sensor_routine * 60 * 1000));
     }
 }
+
+/* Registers the Low Power Node (LPN) routine by creating the sensor_task
+ * pinned to the ESP32-C3 core with defined stack size and priority. */
 
 void static register_lpn_routine(){
 			xTaskCreatePinnedToCore(
@@ -358,6 +392,9 @@ void static register_lpn_routine(){
 			);
 }
 
+/* Provisioning complete callback. and initializes BLE Mesh sensor buffers with default 
+ * values for temperature, soil moisture, * and battery level. */
+
 static void prov_complete(uint16_t net_idx, uint16_t addr, uint8_t flags, uint32_t iv_index)
 {
     ESP_LOGI(TAG_bt, "net_idx 0x%03x, addr 0x%04x", net_idx, addr);
@@ -368,6 +405,13 @@ static void prov_complete(uint16_t net_idx, uint16_t addr, uint8_t flags, uint32
     net_buf_simple_add_le16(&data_soil_moisture, init_int_var);
     net_buf_simple_add_le16(&data_battery_level, init_int_var);
 }
+
+/* BLE Mesh provisioning callback handler.
+ * Handles provisioning and Low Power Node (LPN) events including registration,
+ * enabling, link open/close, provisioning completion/reset, and device name setup.
+ * Also manages LPN friendship establishment/termination by triggering routines
+ * (e.g., sensor task registration or re-enabling LPN). Logs all events and errors
+ * for debugging and monitoring. */
 
 static void ble_mesh_provisioning_cb(esp_ble_mesh_prov_cb_event_t event,
                                              esp_ble_mesh_prov_cb_param_t *param)
@@ -426,8 +470,13 @@ static void ble_mesh_provisioning_cb(esp_ble_mesh_prov_cb_event_t event,
     default:
         break;
     }
-    taskYIELD(); 
 }
+
+/* BLE Mesh configuration server callback handler.
+ * Processes state change events such as AppKey addition, model-app binding,
+ * and model subscription updates. Updates gateway context with AppKey info,
+ * logs configuration details for debugging, and enables LPN node when
+ * subscriptions are added. */
 
 static void ble_mesh_config_server_cb(esp_ble_mesh_cfg_server_cb_event_t event,
                                               esp_ble_mesh_cfg_server_cb_param_t *param)
@@ -606,6 +655,11 @@ static void ble_mesh_send_sensor_setting_status(esp_ble_mesh_sensor_server_cb_pa
     }
 }
 
+/* Encodes sensor state into BLE Mesh Sensor Data format.
+ * Builds the MPID (Message Parameter ID) based on property ID,
+ * data length, and format (A or B), then copies raw sensor value
+ * into the provided buffer. Returns total number of bytes written. */
+
 static uint16_t ble_mesh_get_sensor_data(esp_ble_mesh_sensor_state_t *state, uint8_t *data)
 {
     uint8_t mpid_len = 0, data_len = 0;
@@ -638,6 +692,15 @@ static uint16_t ble_mesh_get_sensor_data(esp_ble_mesh_sensor_state_t *state, uin
 
     return (mpid_len + data_len);
 }
+
+/* Sends a BLE Mesh Sensor Status message in response to a GET request.
+ * Allocates a buffer sized for all sensor states, encodes Property IDs and Raw Values
+ * according to Mesh Model specification, and fills the payload with either:
+ *   - all sensor properties (if Property ID omitted),
+ *   - the requested property (if recognized),
+ *   - or a zero-length entry with only the Property ID (if unrecognized).
+ * Logs the marshalled data, transmits via the sensor server model context,
+ * and frees the buffer after sending. Reports errors if allocation or transmission fails. */
 
 static void ble_mesh_send_sensor_status(esp_ble_mesh_sensor_server_cb_param_t *param)
 {
@@ -725,7 +788,10 @@ send:
     
 }
 
-// Function to send data to node gateway without waiting a GET message.
+/* Publishes sensor status data proactively to the gateway without waiting for a GET request.
+*
+*/
+
 static void ble_mesh_publish_sensor_status()
 {
     uint8_t *status = NULL;
@@ -780,10 +846,11 @@ static void ble_mesh_publish_sensor_status()
         ESP_LOGE(TAG_bt, "Failed to publish Sensor Status");
     }
     free(status);
-    ESP_LOGI(TAG_bt, "PUBLISH MESSAGE STATUS - EXITING");
-    
-    
 }
+
+/* Sends a BLE Mesh Sensor Column Status message in response to a GET request.
+*
+*/
 
 static void ble_mesh_send_sensor_column_status(esp_ble_mesh_sensor_server_cb_param_t *param)
 {
@@ -811,6 +878,10 @@ static void ble_mesh_send_sensor_column_status(esp_ble_mesh_sensor_server_cb_par
     free(status);
 }
 
+/* Sends a BLE Mesh Sensor Series Status message in response to a GET request.
+*
+*/
+
 static void ble_mesh_send_sensor_series_status(esp_ble_mesh_sensor_server_cb_param_t *param)
 {
     esp_err_t err;
@@ -823,6 +894,11 @@ static void ble_mesh_send_sensor_series_status(esp_ble_mesh_sensor_server_cb_par
         ESP_LOGE(TAG_bt, "Failed to send Sensor Column Status");
     }
 }
+
+/* Callback handler for BLE Mesh Sensor Server events.
+ * Processes incoming GET and SET messages from the mesh network,
+ * dispatches appropriate status responses (descriptor, settings, cadence, sensor data),
+ * and logs unknown opcodes or events. Updates local sensor cadence routine when set. */
 
 static void ble_mesh_sensor_server_cb(esp_ble_mesh_sensor_server_cb_event_t event,
                                               esp_ble_mesh_sensor_server_cb_param_t *param)
@@ -907,6 +983,11 @@ static void ble_mesh_sensor_server_cb(esp_ble_mesh_sensor_server_cb_event_t even
     }
 }
 
+
+/* Initializes the BLE Mesh stack, registers provisioning/config/sensor callbacks,
+ * and enables the node for both advertising and GATT bearers. Logs errors if
+ * initialization or enabling fails, otherwise confirms sensor server setup. */
+ 
 static esp_err_t ble_mesh_init(void)
 {
     esp_err_t err;
