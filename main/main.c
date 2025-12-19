@@ -330,11 +330,11 @@ void read_sensor_battery(void)
 void sensor_task(void *arg)
 {
     while (1) {
-		ESP_LOGI(TAG_main, "Initializing sensor task");
+		    ESP_LOGI(TAG_main, "Initializing sensor task");
         // Acquire PM lock to prevent sleep
         esp_pm_lock_acquire(pm_lock);
 
-		vTaskDelay(pdMS_TO_TICKS(2500));
+		    vTaskDelay(pdMS_TO_TICKS(2500));
 		
         // Power sensors ON
         ds18b20_init();
@@ -349,10 +349,10 @@ void sensor_task(void *arg)
         
 		
 				
-		// Read sensors and publish data
-		read_sensor_temperature();
-		read_sensor_moisture();
-		read_sensor_battery();
+		    // Read sensors and publish data
+		    read_sensor_temperature();
+		    read_sensor_moisture();
+		    read_sensor_battery();
  		
         // Trigger Friend Poll
         bt_mesh_lpn_poll();
@@ -366,13 +366,13 @@ void sensor_task(void *arg)
         
 		ds18b20_deinit();
 		
-		vTaskDelay(pdMS_TO_TICKS(2500));
+		    vTaskDelay(pdMS_TO_TICKS(2500));
 		
         // Release PM lock
         esp_pm_lock_release(pm_lock);
         
         // Sleep until next cycle
-		ESP_LOGI(TAG_main, "going to sleep for %i minutes", delay_sensor_routine);
+		    ESP_LOGI(TAG_main, "going to sleep for %i minutes", delay_sensor_routine);
         vTaskDelay(pdMS_TO_TICKS(delay_sensor_routine * 60 * 1000));
     }
 }
@@ -501,7 +501,6 @@ static void ble_mesh_config_server_cb(esp_ble_mesh_cfg_server_cb_event_t event,
                 param->value.state_change.mod_app_bind.app_idx,
                 param->value.state_change.mod_app_bind.company_id,
                 param->value.state_change.mod_app_bind.model_id);
-            
             //enable_lpn_node();
             
             break;
@@ -1036,10 +1035,10 @@ void app_main(void)
     ESP_ERROR_CHECK(err);
 
     //candece config purposes
-	net_buf_simple_add_le16(&delta_up, 0);
-	net_buf_simple_add_le16(&low, 0);
-	net_buf_simple_add_le16(&high, 0);
-	net_buf_simple_add_le16(&delta_down, 0);
+	  net_buf_simple_add_le16(&delta_up, 0);
+	  net_buf_simple_add_le16(&low, 0);
+	  net_buf_simple_add_le16(&high, 0);
+	  net_buf_simple_add_le16(&delta_down, 0);
 
     err = bluetooth_init();
     if (err) {
