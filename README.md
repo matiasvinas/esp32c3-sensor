@@ -12,8 +12,6 @@ Para ver la descripción completa del sistema acceder a [or-platform](https://gi
     - [Características](#características)
     - [Conexión de los sensores a la placa de desarrollo](#conexión-de-los-sensores-a-la-placa-de-desarrollo)
     - [Configuración para la comunicación BLE Mesh entre los nodos sensores y el nodo *gateway*](#configuración-para-la-comunicación-ble-mesh-entre-los-nodos-sensores-y-el-nodo-gateway)
-    - [Configuración de la frecuencia de medición de los sensores](#configuración-de-la-frecuencia-de-medición-de-los-sensores)
-    - [Configuración del *modem mode* para el ahorro de energía](#configuración-del-modem-mode-para-el-ahorro-de-energía)
     - [Esquemático](#esquemático)
 - [Enlaces útiles](#enlaces-útiles)
 
