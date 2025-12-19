@@ -55,26 +55,6 @@ Para ver la descripción completa del sistema acceder a [or-platform](https://gi
         static uint8_t dev_uuid[ESP_BLE_MESH_OCTET16_LEN] = { SENSOR_ID_MESH_0, SENSOR_ID_MESH_1, SENSOR_ID_NODE };
         ```
 
-## Configuración de la frecuencia de medición de los sensores
-
-1. Definir la variable `SAMPLE_DELAY` en el archivo `main/main.c` para establecer el tiempo transcurrido entre mediciones.
-    ```
-    /* tiempo de espera entre ronda de mediciones */
-    #define SAMPLE_DELAY                30000
-    ```
-    
-## Configuración del *modem mode* para el ahorro de energía
-
-1. Abrir el directorio del proyecto y correr el siguiente comando:
-    ```
-    idf.py menuconfig
-    ```
-2. Navegar a `Component Config-> Bluetooth -> Controller Options -> MODEM SLEEP Options`
-3. Habilitar `[*] Bluetooth modem sleep`.
-4. Habilitar `[*] Bluetooth modem sleep Mode 1`.
-5. En `Bluetooth low power clock` seleccionar `Main crystal`.
-6. Guardar cambios y salir.
-
 ## Esquemático
 ![Diagrama del dispositivo Sensor](images/sensor_diagram.png)
 
